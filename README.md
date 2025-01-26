@@ -1,4 +1,4 @@
-![alt text](https://github.com/ripsource/OpenTrade/blob/main/img/outpost_logo.png?raw=true)
+![alt text](https://github.com/ripsource/Outpost/blob/main/img/outpost_logo.png?raw=true)
 
 
 # Free and Open Source NFT Creator, Trader, Marketplace Protocol 
