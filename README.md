@@ -1,15 +1,15 @@
-![alt text](https://github.com/ripsource/OpenTrade/blob/main/outpost_logo.png?raw=true)
+![alt text](https://github.com/ripsource/OpenTrade/blob/main/img/outpost_logo.png?raw=true)
 
 
-# Free and Open Source NFT Creator, Trader, Marketplace Protocol - _In Live Development_ 
+# Free and Open Source NFT Creator, Trader, Marketplace Protocol 
 
-### Try on stokenet: component_tdx_2_1cpark7wnjkk5qv0rgt6qejr9ny6hteck47asj7snz8plme6zjkafwp
+### Try on stokenet: ---
 
 Create a new trade account (example):
 ```
 CALL_METHOD
     Address("component_tdx_2_1cpark7wnjkk5qv0rgt6qejr9ny6hteck47asj7snz8plme6zjkafwp")
-    "create_open_trader"
+    "create_outpost"
     Address("account_tdx_2_12y0xpdypsltq90w07lwnlh2640tg28m8v0cg2yppzlhgnwpndhq47c")
 ;
 CALL_METHOD
@@ -63,7 +63,7 @@ The design hopes to boast the following features:
 - Any existing collection or new collection no matter how it is minted is compatible with this system
 - It is completely free to set up and manage
 - There is 0 lock in. Something better comes along? No problem, no fee.
-- Equally, if OpenTrade gets better/adds new features - creators can upgrade to them easily too
+- Equally, if Oupost gets better/adds new features - creators can upgrade to them easily too
 - %fee Royalties are supported for newly minted collections
 - Use a standard template to mint collections that are fully integrated with the trading system
 - BYOB - Bring your own blueprint, integration to your collection requires only a few lines of Scrypto
@@ -96,11 +96,11 @@ The design hopes to boast the following features:
 # A novel approach to royalties
 In order to impose royalties on NFT trades, we have to introduce restrictions on either/or both the deposit rules and withdraw rules of an NFT. This means requiring some form of authorisation before a NFT can be deposited into a vault or withdrawn from one. Typically to handle this, you might have a single component that generates proofs of badges that allow the action to take place, however proofs can be cloned to be used multiple times, they're not very specific for what they can allow and ultimately, lead to a royalty system with several easy ways to bypass payments. 
 
-The Open Trade system instead gives authority via a badge to every single trading account to be able to deposit royalty-enforced NFTs. The badge acts as a universal admin for deposit rules across every Royalty NFT created on the system. While this may seem counter-intuitive at first as our goal is to not let individual traders have the power to bypass these restrictions, in fact because the badge is locked in component vault that can only be accessed in specific ways that we dictate, there's no way for a user to gain access to the badge - it is kept and used entirely virtually, never becoming exposed to control by the user.
+The outpost system instead gives authority via a badge to every single trading account to be able to deposit royalty-enforced NFTs. The badge acts as a universal admin for deposit rules across every Royalty NFT created on the system. While this may seem counter-intuitive at first as our goal is to not let individual traders have the power to bypass these restrictions, in fact because the badge is locked in component vault that can only be accessed in specific ways that we dictate, there's no way for a user to gain access to the badge - it is kept and used entirely virtually, never becoming exposed to control by the user.
 
 When a user wants to list a Royalty NFT to their trading account, they simply withdraw it and their account authorising depositing it into their trading account. When a user/marketplace purchases the NFT, they use the purchase_royal_listing method which checks the metadata of the NFT for a royalty component and sends the full payment to the royalty component for processing before allowing the trading account to then deposit the NFT in the buyers account. This pattern allows for a high level of configurability of how NFT royalties are collected as well as opening the possibility for dynamic reactive methods based on trading/transferring of an NFT. 
 
-Royalty systems often have to make comprimises between the level of enforcement and interoperability/usability (i.e. can people transfer the NFT between their own accounts for no charge? or is that a way to bypass royalties?). The Open Trader standard closed many common loopholes while also allowing creators to customise their royalties for the right balance of enforcement and freedom. The implementation offers a range of options that can be enabled to create a very strict level of royalty enforcement, or certain areas can be relaxed depending on what a creator wants.
+Royalty systems often have to make comprimises between the level of enforcement and interoperability/usability (i.e. can people transfer the NFT between their own accounts for no charge? or is that a way to bypass royalties?). The outpost standard closed many common loopholes while also allowing creators to customise their royalties for the right balance of enforcement and freedom. The implementation offers a range of options that can be enabled to create a very strict level of royalty enforcement, or certain areas can be relaxed depending on what a creator wants.
 
 ## Common royalty loopholes and solutions
 
