@@ -78,6 +78,64 @@ pub fn mint_royalty_nft(
     }
 }
 
+//admin protect direct mint, returns to creator without any payment required.
+//    pub fn direct_mint(
+//     &mut self,
+//     data: Vec<(
+//         NonFungibleLocalId,
+//         (String, String, String, Vec<HashMap<String, String>>),
+//     )>,
+// ) -> Vec<Bucket> {
+
+pub fn direct_mint(
+    test_runner: &mut DefaultLedgerSimulator,
+    user: &User,
+    component: ComponentAddress,
+    id: u64,
+    creator_key: ResourceAddress,
+) {
+    let creator_local_id: NonFungibleLocalId =
+        NonFungibleLocalId::string("creator_key".to_string()).unwrap();
+
+    let data: Vec<(
+        NonFungibleLocalId,
+        (String, String, String, Vec<HashMap<String, String>>),
+    )> = vec![(
+        NonFungibleLocalId::integer(id.into()),
+        (
+            "name".to_string(),
+            "description".to_string(),
+            "https://i.scdn.co/image/ab67616d0000b2735d02af8588949bf7ee2f0a08".to_string(),
+            vec![HashMap::new()],
+        ),
+    )];
+
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_method(
+            user.account,
+            "create_proof_of_non_fungibles",
+            manifest_args!(creator_key, vec![creator_local_id]),
+        )
+        .call_method(component, "direct_mint", manifest_args!(data))
+        .call_method(
+            user.account,
+            "deposit_batch",
+            manifest_args!(ManifestExpression::EntireWorktop),
+        )
+        .build();
+
+    let receipt = test_runner.execute_manifest(
+        manifest,
+        vec![NonFungibleGlobalId::from_public_key(&user.pubkey)],
+    );
+
+    if !receipt.is_commit_success() {
+        println!("{:?}", receipt);
+        panic!("TRANSACTION FAIL");
+    }
+}
+
 pub fn get_nft_address(
     test_runner: &mut DefaultLedgerSimulator,
     user: &User,

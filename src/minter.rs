@@ -327,7 +327,7 @@ mod royal_nft {
                     init {
                         "name" => admin_name.to_owned(), locked;
                         "type" => "OT Creator Key".to_owned(), locked;
-                        "icon_url" => Url::of("https://radixopentrade.netlify.app/img/OT_logo_black.webp"), locked;
+                        "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
                         "royalty_component" => royalty_component_address, locked;
                     }
                 })
@@ -585,7 +585,7 @@ mod royal_nft {
             &mut self,
             mut payment: Bucket,
             mut account: Global<Account>,
-            permission: Proof,
+            // permission: Proof,
         ) -> Vec<Bucket> {
             assert!(
                 self.reveal_step == true,
@@ -605,12 +605,12 @@ mod royal_nft {
                 "[Mint Preview NFT] : Collection cap reached"
             );
 
-            assert!(
-                self.minting_venue
-                    .get(&permission.resource_address())
-                    .is_some(),
-                "Permission is required to mint this NFT"
-            );
+            // assert!(
+            //     self.minting_venue
+            //         .get(&permission.resource_address())
+            //         .is_some(),
+            //     "Permission is required to mint this NFT"
+            // );
 
             self.mint_payments_vault.put(payment.take(self.mint_price));
 

@@ -40,7 +40,7 @@ mod mint_factory {
                 init {
                     "name" => "Mint Factory Admin".to_owned(), locked;
                     "description" => "Mint Factory Admin Badge".to_owned(), locked;
-                    "icon_url" => Url::of("https://radixopentrade.netlify.app/img/OT_logo_black.webp"), locked;
+                    "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
                 }
               ))
                 .divisibility(0)
@@ -65,7 +65,7 @@ mod mint_factory {
                     "name" => "OT Mint Factory".to_owned(), updatable;
                     "description" => "The mint factory for OT Collections".to_owned(), updatable;
                     "dapp_definition" => component_address, updatable;
-                    "icon_url" => Url::of("https://radixopentrade.netlify.app/img/OT_logo_black.webp"), updatable;
+                    "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), updatable;
                 }
             ))
             .with_address(address_reservation)

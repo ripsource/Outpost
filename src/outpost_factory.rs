@@ -21,8 +21,16 @@ struct EmitterKey {
     name: String,
 }
 
+#[derive(ScryptoSbor, ScryptoEvent)]
+struct OutpostCreated {
+    outpost_component: ComponentAddress,
+    outpost_account: ComponentAddress,
+}
+
 #[blueprint]
+#[events(OutpostCreated)]
 mod openhub {
+    use std::path::Component;
 
     struct OpenHub {
         /// The badge that is stored and locked in a trader account to authenticate event emitters
@@ -41,12 +49,14 @@ mod openhub {
         registered_accounts: KeyValueStore<ComponentAddress, ComponentAddress>,
         // Transient Tokens
         transient_token_manager: FungibleResourceManager,
+        // package admin
+        admin: ResourceAddress,
     }
 
     impl OpenHub {
         /// Instantiation of the open hub component creates the resource managers of all the key badges used in the system
         /// which are minted when a user creates a trading account for themselves.
-        pub fn start_open_hub() -> (Global<OpenHub>, Bucket) {
+        pub fn start_open_hub(dapp_defintion: ComponentAddress) -> (Global<OpenHub>, Bucket) {
             let (address_reservation, component_address) =
                 Runtime::allocate_component_address(OpenHub::blueprint_id());
 
@@ -61,9 +71,9 @@ mod openhub {
                   metadata_locker_updater => rule!(deny_all);
                 },
                 init {
-                    "name" => "OpenTrade Admin".to_owned(), locked;
-                    "description" => "OpenTrade Admin Badge".to_owned(), locked;
-                    "icon_url" => Url::of("https://radixopentrade.netlify.app/img/OT_logo_black.webp"), locked;
+                    "name" => "Outpost Admin".to_owned(), locked;
+                    "description" => "Outpost Admin Badge".to_owned(), locked;
+                    "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
                 }
               ))
                 .divisibility(0)
@@ -75,6 +85,19 @@ mod openhub {
 
             let emitter_trader_badge =
                 ResourceBuilder::new_ruid_non_fungible::<EmitterKey>(OwnerRole::None)
+                .metadata(metadata!(
+                    roles {
+                      metadata_setter => rule!(deny_all);
+                      metadata_setter_updater => rule!(deny_all);
+                      metadata_locker => rule!(deny_all);
+                      metadata_locker_updater => rule!(deny_all);
+                    },
+                    init {
+                        "name" => "Outpost Internal Services".to_owned(), locked;
+                        "description" => "Outpost Internal Services".to_owned(), locked;
+                        "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
+                    }
+                  ))
                     .mint_roles(mint_roles! {
                         minter => global_caller_badge_rule.clone();
                         minter_updater => admin_rule.clone();
@@ -83,6 +106,19 @@ mod openhub {
 
             let outpost_account_badge =
                 ResourceBuilder::new_ruid_non_fungible::<TraderKey>(OwnerRole::None)
+                .metadata(metadata!(
+                    roles {
+                      metadata_setter => rule!(deny_all);
+                      metadata_setter_updater => rule!(deny_all);
+                      metadata_locker => rule!(deny_all);
+                      metadata_locker_updater => rule!(deny_all);
+                    },
+                    init {
+                        "name" => "Outpost Key".to_owned(), locked;
+                        "description" => "The key to managing your listings at your outpost".to_owned(), locked;
+                        "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
+                    }
+                  ))
                     .mint_roles(mint_roles! {
                         minter => global_caller_badge_rule.clone();
                         minter_updater => admin_rule.clone();
@@ -98,6 +134,19 @@ mod openhub {
                     .create_with_no_initial_supply();
 
             let royal_nft_depositer_badge = ResourceBuilder::new_fungible(OwnerRole::None)
+            .metadata(metadata!(
+                roles {
+                  metadata_setter => rule!(deny_all);
+                  metadata_setter_updater => rule!(deny_all);
+                  metadata_locker => rule!(deny_all);
+                  metadata_locker_updater => rule!(deny_all);
+                },
+                init {
+                    "name" => "Royalty Internal Services".to_owned(), locked;
+                    "description" => "Royalty control for outpost internal services".to_owned(), locked;
+                    "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
+                }
+              ))
                 .mint_roles(mint_roles! {
                     minter => global_caller_badge_rule.clone();
                     minter_updater => admin_rule.clone();
@@ -106,6 +155,19 @@ mod openhub {
                 .create_with_no_initial_supply();
 
             let transient_token_manager = ResourceBuilder::new_fungible(OwnerRole::None)
+            .metadata(metadata!(
+                roles {
+                  metadata_setter => rule!(deny_all);
+                  metadata_setter_updater => rule!(deny_all);
+                  metadata_locker => rule!(deny_all);
+                  metadata_locker_updater => rule!(deny_all);
+                },
+                init {
+                    "name" => "Internal transient badge".to_owned(), locked;
+                    "description" => "Internal transient badge".to_owned(), locked;
+                    "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
+                }
+              ))
                 .divisibility(0)
                 .mint_roles(mint_roles! {
                     minter => global_caller_badge_rule.clone();
@@ -139,6 +201,7 @@ mod openhub {
                 account_locker: locker,
                 registered_accounts: KeyValueStore::new(),
                 transient_token_manager,
+                admin: open_hub_admin.resource_address()
             }
             .instantiate()
             .prepare_to_globalize(OwnerRole::None)
@@ -150,10 +213,10 @@ mod openhub {
                     metadata_locker_updater => admin_rule.clone();
                 },
                 init {
-                    "name" => "OpenTrade".to_owned(), updatable;
-                    "description" => "OpenTrade Hub".to_owned(), updatable;
-                    "dapp_definition" => component_address, updatable;
-                    "icon_url" => Url::of("https://radixopentrade.netlify.app/img/OT_logo_black.webp"), updatable;
+                    "name" => "Outpost Hub".to_owned(), updatable;
+                    "description" => "Outpost Hub".to_owned(), updatable;
+                    "dapp_definition" => dapp_defintion, updatable;
+                    "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), updatable;
                 }
             ))
             .with_address(address_reservation)
@@ -180,6 +243,22 @@ mod openhub {
                 panic!("Account already has created an OT Trading Hub - check your wallet for your hub key.");
             }
 
+            let dapp_def_account =
+                Blueprint::<Account>::create_advanced(OwnerRole::Updatable(rule!(allow_all)), None); // will reset owner role after dapp def metadata has been set
+            dapp_def_account.set_metadata("account_type", String::from("dapp definition"));
+            dapp_def_account.set_metadata("name", "Outpost".to_string());
+            dapp_def_account.set_metadata(
+                "description",
+                "An extension of your account for managing your NFTs across Radix".to_string(),
+            );
+            dapp_def_account.set_metadata("info_url", Url::of("https://outpostdocs.netlify.app/"));
+            dapp_def_account.set_metadata(
+                "icon_url",
+                Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"),
+            );
+
+            let dapp_def_address = GlobalAddress::from(dapp_def_account.address());
+
             let emitter_badge = self
                 .emitter_trader_badge
                 .mint_ruid_non_fungible(EmitterKey {
@@ -191,9 +270,9 @@ mod openhub {
             let personal_trading_account_badge = self
                 .outpost_account_badge
                 .mint_ruid_non_fungible(TraderKey {
-                    name: "OT Hub Key".to_string(),
-                    description: "Your hub for listing and managing your NFTs across marketplaces and with other users.".to_string(),
-                    key_image_url: Url::of("https://radixopentrade.netlify.app/img/OT_logo_black.webp"),
+                    name: "Outpost Key".to_string(),
+                    description: "Your key for listing and managing your NFTs across marketplaces and with other users.".to_string(),
+                    key_image_url: Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"),
                     hub: hub_address,
                 });
 
@@ -213,18 +292,29 @@ mod openhub {
                 emitter_badge.into(),
                 depositer_permission_badge.into(),
                 self.event_manager,
-                self.component_address,
+                dapp_def_address,
                 self.account_locker.clone(),
                 transient_token,
             );
 
             let hub_component_address = new_hub_component.address();
 
+            dapp_def_account.set_metadata(
+                "claimed_entities",
+                vec![GlobalAddress::from(hub_component_address.clone())],
+            );
+            dapp_def_account.set_owner_role(rule!(require(self.admin)));
+
             self.outpost_account_badge.update_non_fungible_data(
                 nfgid.clone().local_id(),
                 "hub",
                 Some(hub_component_address.clone()),
             );
+
+            Runtime::emit_event(OutpostCreated {
+                outpost_component: hub_component_address.clone(),
+                outpost_account: my_account.address(),
+            });
 
             self.registered_accounts
                 .insert(my_account.clone().address(), hub_component_address);

@@ -107,5 +107,31 @@ mod event {
                 nft_id,
             });
         }
+
+        pub fn multi_listing_event(&self, listings: Vec<Listing>, emitter_badge: Proof) {
+            emitter_badge.check(self.emitter_badge_auth);
+
+            // Use zip to iterate over both vectors simultaneously
+            for listing in listings {
+                Runtime::emit_event(ListingCreated {
+                    listing: listing.clone(),
+                    outpost_account: listing.outpost_account,
+                    nft_id: listing.nfgid, // Wrap single NFT ID in a vector to match event structure
+                });
+            }
+        }
+
+        pub fn multi_purchase_event(&self, listings: Vec<Listing>, emitter_badge: Proof) {
+            emitter_badge.check(self.emitter_badge_auth);
+
+            // Use zip to iterate over both vectors simultaneously
+            for listing in listings {
+                Runtime::emit_event(ListingPurchased {
+                    listing: listing.clone(),
+                    outpost_account: listing.outpost_account,
+                    nft_id: listing.nfgid, // Wrap single NFT ID in a vector to match event structure
+                });
+            }
+        }
     }
 }

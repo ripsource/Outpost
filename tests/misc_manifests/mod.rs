@@ -246,6 +246,27 @@ pub fn defaults_royalty_config() -> RoyaltyConfig {
     }
 }
 
+pub fn blank_config() -> RoyaltyConfig {
+    let dapp_permissions: HashMap<ComponentAddress, ResourceAddress> = hashmap![];
+    let buyer_permissions: Vec<ComponentAddress> = vec![];
+    let currencies: Vec<ResourceAddress> = vec![];
+    let minimum_amounts: HashMap<ResourceAddress, Decimal> = hashmap!();
+
+    RoyaltyConfig {
+        royalty_percent: Decimal::from_str("0").unwrap(),
+        maximum_royalty_percent: Decimal::from_str("0").unwrap(),
+        limit_currencies: false,
+        permitted_currencies: currencies,
+        minimum_royalties: false,
+        minimum_royalty_amounts: minimum_amounts,
+        limit_dapps: false,
+        permissioned_dapps: dapp_permissions,
+        limit_buyers: false,
+        permissioned_buyers: buyer_permissions,
+        royalty_configuration_locked: false,
+    }
+}
+
 pub fn custom_royalty_config(
     royalty_percent: Decimal,
     max_royalty_percent: Decimal,
@@ -391,32 +412,6 @@ pub fn create_royalty_nft(
             mint_factory_component,
             "create_royal_nft",
 
-            // pub fn create_royal_nft(&mut self,
-            //     name: String,
-            //     description: String,
-            //     icon_url: String,
-            //     preview_image_url: String,
-            //     mint_price: Decimal,
-            //     mint_currency: ResourceAddress,
-            //     collection_cap: u64,
-            //     rules: Vec<bool>,
-            //     depositer_admin: ResourceAddress,
-            //     royalties_enabled: bool,
-            //     royalty_percent: Decimal,
-            //     maximum_royalty_percent: Decimal,
-            //        // These represent some advanced setting that creators can enable to heighten the level of royalty enforcement
-            //     // and use to create new reactive/dynamic features for their NFTs.
-            //     limits: Vec<bool>,
-            //     // 0. limit_buyers: bool,
-            //     // 1. limit_currencies: bool,
-            //     // 2. limit_dapps: bool,
-            //     // 3. limit_private_trade: bool,
-            //     // 4. minimum_royalties: bool,
-            //     permissioned_dapps_input: HashMap<ComponentAddress, ResourceAddress>,
-            //     permissioned_buyers_input: Vec<ResourceAddress>,
-            //     restricted_currencies_input: Vec<ResourceAddress>,
-            //     minimum_royalty_amounts_input: HashMap<ResourceAddress, Decimal>,
-
             manifest_args!(
                 "Baked Potato NFTs".to_string(),
                 "An Baked Potato NFT collection you can trade with royalties".to_string(),
@@ -428,6 +423,79 @@ pub fn create_royalty_nft(
                 vec![false, false, true, false, false],
                 depositer_badge,
                 true,
+                royalty_config.royalty_percent,
+                royalty_config.maximum_royalty_percent,
+                vec![
+                    royalty_config.limit_buyers,
+                    royalty_config.limit_currencies,
+                    royalty_config.limit_dapps,
+                    false,
+                    royalty_config.minimum_royalties,
+                ],
+                royalty_config.permissioned_dapps,
+                royalty_config.permissioned_buyers,
+                royalty_config.permitted_currencies,
+                royalty_config.minimum_royalty_amounts,
+            ),
+        )
+        .call_method(
+            user.account,
+            "deposit_batch",
+            manifest_args!(ManifestExpression::EntireWorktop),
+        )
+        .build();
+
+    let receipt = test_runner.execute_manifest(
+        manifest,
+        vec![NonFungibleGlobalId::from_public_key(&user.pubkey)],
+    );
+
+    if !receipt.is_commit_success() {
+        println!("{:?}", receipt);
+        panic!("TRANSACTION FAIL");
+    }
+
+    let component = receipt.expect_commit(true).new_component_addresses()[0];
+
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_method(component.clone(), "creator_admin", manifest_args!())
+        .build();
+    let receipt = test_runner.execute_manifest(
+        manifest,
+        vec![NonFungibleGlobalId::from_public_key(&user.pubkey)],
+    );
+
+    let creator_key: ResourceAddress = receipt.expect_commit(true).output(1);
+
+    (component, creator_key)
+}
+
+pub fn create_custom_variant_nft(
+    test_runner: &mut DefaultLedgerSimulator,
+    user: &User,
+    mint_factory_component: ComponentAddress,
+    royalty_config: RoyaltyConfig,
+    depositer_badge: ResourceAddress,
+    with_royalty: bool,
+) -> (ComponentAddress, ResourceAddress) {
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_method(
+            mint_factory_component,
+            "create_royal_nft",
+
+            manifest_args!(
+                "Baked Potato NFTs".to_string(),
+                "An Baked Potato NFT collection you can trade with royalties".to_string(),
+                "https://www.allrecipes.com/thmb/c_2gXiAwkO6u1UJCY-1eAVCy0h0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/54679_perfect-baked-potato-Rita-1x1-1-91711252bb3740088c8ea55c5f9bef1c.jpg".to_string(),
+                "https://www.onceuponachef.com/images/2022/11/baked-potatoes.jpg".to_string(),
+                dec!(100),
+                XRD,
+                1000u64,
+                vec![false, false, false, false, false],
+                depositer_badge,
+                with_royalty,
                 royalty_config.royalty_percent,
                 royalty_config.maximum_royalty_percent,
                 vec![
