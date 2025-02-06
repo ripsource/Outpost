@@ -100,9 +100,9 @@ mod royal_nft {
     },
     methods {
         mint_preview_nft => PUBLIC;
-        direct_mint => restrict_to: [admin];
+        direct_mint => PUBLIC;
         enable_mint_reveal => restrict_to: [admin];
-        upload_metadata => restrict_to: [admin];
+        upload_metadata => PUBLIC;
         creator_admin => PUBLIC;
         mint_reveal => PUBLIC;
         pay_royalty => PUBLIC;
@@ -133,6 +133,8 @@ mod royal_nft {
         cleared => PUBLIC;
         get_transient_token_address => PUBLIC;
         get_nft_address => PUBLIC;
+        toggle_temp_admin => restrict_to: [admin];
+        mint_temp_admin => restrict_to: [admin];
     }
     }
 
@@ -181,6 +183,15 @@ mod royal_nft {
 
         /// virtual_account temp admin
         virtual_account_admin: Option<Global<Account>>,
+
+        /// virtual mint badge
+        virtual_admin_minting_badge: FungibleResourceManager,
+
+        /// enable temp admin for minting
+        temp_admin: bool,
+
+        /// internal creator admin
+        internal_creator_admin: Vault,
 
         /// Specify minting venue/marketplace - i.e. specific marketplaces that can mint the NFTs.
         /// This is useful if a creator wants to allow minting of their NFTs on a specific marketplace.
@@ -338,6 +349,10 @@ mod royal_nft {
                     royalty_component: royalty_component_address,
                 })]);
 
+            let internal_creator_admin = ResourceBuilder::new_fungible(OwnerRole::None)
+                .divisibility(0)
+                .mint_initial_supply(1);
+
             // create the rules for the creator of the collection
             let creator_admin_rule = rule!(require_amount(
                 dec!(1),
@@ -354,7 +369,8 @@ mod royal_nft {
             if royalties_enabled {
                 depositer_admin_rule = rule!(
                     require_amount(1, depositer_admin)
-                        || require(global_caller(royalty_component_address))
+                        || require_amount(1, internal_creator_admin.resource_address())
+                        || require(nft_creator_admin.resource_address())
                 );
             } else {
                 depositer_admin_rule = rule!(allow_all);
@@ -440,6 +456,22 @@ mod royal_nft {
 
             let virtual_account_admin: Option<Global<Account>> = None;
 
+            let virtual_admin_minting_badge = ResourceBuilder::new_fungible(OwnerRole::None)
+                .divisibility(0)
+                .mint_roles(mint_roles! {
+                    minter => global_caller_badge_rule.clone();
+                    minter_updater => creator_admin_rule.clone();
+                })
+                .burn_roles(burn_roles! {
+                    burner => rule!(allow_all);
+                    burner_updater => creator_admin_rule.clone();
+                })
+                .recall_roles(recall_roles! {
+                    recaller => creator_admin_rule.clone();
+                    recaller_updater => creator_admin_rule.clone();
+                })
+                .create_with_no_initial_supply();
+
             let transient_token = ResourceBuilder::new_fungible(OwnerRole::None)
                 .divisibility(0)
                 .deposit_roles(deposit_roles! {
@@ -487,9 +519,12 @@ mod royal_nft {
                 royalty_vaults: KeyValueStore::new(),
                 royalty_config,
                 virtual_account_admin,
+                internal_creator_admin: Vault::with_bucket(internal_creator_admin.into()),
+                temp_admin: false,
+                virtual_admin_minting_badge,
                 minting_venue: KeyValueStore::new(),
                 latest_transaction: None,
-                transient_token_address: transient_token_address,
+                transient_token_address,
                 transient_tokens: transient_vault,
                 transient_admin_vault: Vault::with_bucket(transient_admin_badge.into()),
             }
@@ -512,6 +547,7 @@ mod royal_nft {
             ))
             .roles(roles!(
                 admin => rule!(require(nft_creator_admin.resource_address()));
+
             ))
             .globalize();
 
@@ -527,14 +563,26 @@ mod royal_nft {
             self.nft_creator_admin
         }
 
+        pub fn mint_temp_admin(&mut self) -> FungibleBucket {
+            self.virtual_admin_minting_badge.mint(1)
+        }
+
         //admin protect direct mint, returns to creator without any payment required.
         pub fn direct_mint(
             &mut self,
+            auth_proof: Proof,
+            recipient: Option<Global<Account>>,
             data: Vec<(
                 NonFungibleLocalId,
                 (String, String, String, Vec<HashMap<String, String>>),
             )>,
-        ) -> Vec<Bucket> {
+        ) -> Option<Vec<Bucket>> {
+            if self.temp_admin {
+                auth_proof.check(self.virtual_admin_minting_badge.address());
+            } else {
+                auth_proof.check(self.nft_creator_admin);
+            }
+
             let mut return_buckets: Vec<Bucket> = vec![];
 
             for (nft_id, metadata) in data {
@@ -554,7 +602,17 @@ mod royal_nft {
                 return_buckets.push(mint.into());
             }
 
-            return_buckets
+            if recipient.is_some() {
+                let mut direct_deposit = recipient.unwrap();
+                let internal_admin = self.internal_creator_admin.take(1);
+                internal_admin.as_fungible().authorize_with_amount(1, || {
+                    direct_deposit.try_deposit_batch_or_abort(return_buckets, None);
+                });
+                self.internal_creator_admin.put(internal_admin);
+                None
+            } else {
+                Some(return_buckets)
+            }
         }
 
         // if the NFTs being minted will have a buy - then - reveal step
@@ -691,8 +749,14 @@ mod royal_nft {
         // this functions allows the creator to upload the metadata for the NFTs to conduct the reveal
         pub fn upload_metadata(
             &mut self,
+            auth_proof: Proof,
             data: Vec<(NonFungibleLocalId, (String, Vec<HashMap<String, String>>))>,
         ) {
+            if self.temp_admin {
+                auth_proof.check(self.virtual_admin_minting_badge.address());
+            } else {
+                auth_proof.check(self.nft_creator_admin);
+            }
             for (nft_id, metadata) in data {
                 self.metadata.insert(nft_id, metadata);
             }
@@ -701,44 +765,22 @@ mod royal_nft {
         // this function updates the metadata on an NFT that has already been minted to reveal the collection
         pub fn mint_reveal(
             &mut self,
-            optional_virt_account: Option<Global<Account>>,
-            optional_admin_badge: Option<Proof>,
+            auth_proof: Proof,
             data: (
                 NonFungibleLocalId,
                 (Vec<String>, Vec<HashMap<String, String>>),
             ),
         ) {
+            if self.temp_admin {
+                auth_proof.check(self.virtual_admin_minting_badge.address());
+            } else {
+                auth_proof.check(self.nft_creator_admin);
+            }
             assert!(
                 self.reveal_step == true,
                 "[Mint Reveal] : This NFT doesn't have a reveal step enabled"
             );
 
-            // check if a badge is being used for auth or a virtual account
-            if optional_virt_account.is_none() {
-                assert!(
-                    optional_admin_badge.is_some(),
-                    "[Mint Reveal] : Admin badge required to reveal collection"
-                );
-
-                optional_admin_badge.unwrap().check(self.nft_creator_admin);
-            } else {
-                assert!(
-                    optional_virt_account.is_some(),
-                    "[Mint Reveal] : Virtual account required to reveal collection"
-                );
-
-                let account = optional_virt_account.unwrap();
-
-                {
-                    // Getting the owner role of the account.
-                    let owner_role = account.get_owner_role();
-
-                    // Assert against it.
-                    Runtime::assert_access_rule(owner_role.rule);
-
-                    // Assertion passed - the caller is the owner of the account.
-                }
-            }
             let nft_id = data.0;
 
             self.nft_manager
@@ -1145,6 +1187,10 @@ mod royal_nft {
 
         pub fn lock_royalty_configuration(&mut self) {
             self.royalty_config.royalty_configuration_locked = true;
+        }
+
+        pub fn toggle_temp_admin(&mut self) {
+            self.temp_admin = !self.temp_admin;
         }
     }
 }
