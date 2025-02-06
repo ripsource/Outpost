@@ -67,6 +67,8 @@ struct NFT {
     key_image_url: Url,
     #[mutable]
     attributes: Vec<HashMap<String, String>>,
+    #[mutable]
+    ipfs_uri: Option<String>,
 }
 
 #[derive(ScryptoSbor, NonFungibleData)]
@@ -149,7 +151,16 @@ mod royal_nft {
         reveal_step: bool,
         initial_sale_cap: u64,
         // reveal data to be uploaded by creator
-        metadata: KeyValueStore<NonFungibleLocalId, (String, Vec<HashMap<String, String>>)>,
+        metadata: KeyValueStore<
+            NonFungibleLocalId,
+            (
+                String,
+                String,
+                String,
+                Option<String>,
+                Vec<HashMap<String, String>>,
+            ),
+        >,
 
         // the admin address input required to sync with the OpenTrader system
         depositer_admin: ResourceAddress,
@@ -574,7 +585,13 @@ mod royal_nft {
             recipient: Option<Global<Account>>,
             data: Vec<(
                 NonFungibleLocalId,
-                (String, String, String, Vec<HashMap<String, String>>),
+                (
+                    String,
+                    String,
+                    String,
+                    Option<String>,
+                    Vec<HashMap<String, String>>,
+                ),
             )>,
         ) -> Option<Vec<Bucket>> {
             if self.temp_admin {
@@ -589,12 +606,17 @@ mod royal_nft {
                 let name = metadata.0.clone();
                 let description = metadata.1.clone();
                 let key_image = Url::of(metadata.2.clone());
+                let mut ipfs_uri: Option<String> = None;
+                if metadata.3.is_some() {
+                    ipfs_uri = metadata.3.clone();
+                }
 
                 let nft = NFT {
                     name,
                     description,
                     key_image_url: key_image,
-                    attributes: metadata.3.clone(),
+                    ipfs_uri,
+                    attributes: metadata.4.clone(),
                 };
 
                 let mint = self.nft_manager.mint_non_fungible(&nft_id, nft);
@@ -677,6 +699,7 @@ mod royal_nft {
                 name: self.mint_id.to_string(),
                 description: self.description.to_string(),
                 key_image_url: Url::of(self.preview_image_url.clone()),
+                ipfs_uri: None,
                 attributes: vec![],
             };
 
@@ -751,7 +774,16 @@ mod royal_nft {
         pub fn upload_metadata(
             &mut self,
             auth_proof: Proof,
-            data: Vec<(NonFungibleLocalId, (String, Vec<HashMap<String, String>>))>,
+            data: Vec<(
+                NonFungibleLocalId,
+                (
+                    String,
+                    String,
+                    String,
+                    Option<String>,
+                    Vec<HashMap<String, String>>,
+                ),
+            )>,
         ) {
             if self.temp_admin {
                 auth_proof.check(self.virtual_admin_minting_badge.address());
@@ -769,7 +801,7 @@ mod royal_nft {
             auth_proof: Proof,
             data: (
                 NonFungibleLocalId,
-                (Vec<String>, Vec<HashMap<String, String>>),
+                (Vec<String>, Option<String>, Vec<HashMap<String, String>>),
             ),
         ) {
             if self.temp_admin {
@@ -785,7 +817,8 @@ mod royal_nft {
             let nft_id = data.0;
 
             self.nft_manager
-                .update_non_fungible_data(&nft_id, "attributes", data.1 .1.clone());
+                .update_non_fungible_data(&nft_id, "attributes", data.1 .2.clone());
+
             self.nft_manager.update_non_fungible_data(
                 &nft_id,
                 "name",
@@ -803,6 +836,13 @@ mod royal_nft {
                 "key_image_url",
                 Url::of(&data.1 .0[2].clone()),
             );
+            if data.1 .1.is_some() {
+                self.nft_manager.update_non_fungible_data(
+                    &nft_id,
+                    "ipfs_uri",
+                    Url::of(&data.1 .1.unwrap().clone()),
+                );
+            }
         }
 
         // This function can be called by trader accounts when an NFT from this collection is purchased.
