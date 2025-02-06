@@ -604,6 +604,7 @@ mod royal_nft {
 
             if recipient.is_some() {
                 let mut direct_deposit = recipient.unwrap();
+                // for some reason component caller auth was failing, I could just be dumb
                 let internal_admin = self.internal_creator_admin.take(1);
                 internal_admin.as_fungible().authorize_with_amount(1, || {
                     direct_deposit.try_deposit_batch_or_abort(return_buckets, None);
