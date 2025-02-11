@@ -6,9 +6,9 @@ use scrypto::prelude::*;
 use crate::minter::royal_nft::*;
 
 #[derive(ScryptoSbor, ScryptoEvent)]
-struct FreshMint {
-    mint_component: Global<RoyalNFTs>,
-    resource_address: ResourceAddress,
+pub struct FreshMint {
+    pub mint_component: ComponentAddress,
+    pub resource_address: ResourceAddress,
 }
 
 
@@ -50,6 +50,7 @@ mod mint_factory {
 
 (
             Self {
+               
                
             }
             .instantiate()
@@ -120,11 +121,11 @@ mod mint_factory {
                 permissioned_dapps_input,
                 permissioned_buyers_input,
                 restricted_currencies_input,
-                minimum_royalty_amounts_input
+                minimum_royalty_amounts_input,
             );
 
             Runtime::emit_event(FreshMint {
-                mint_component: fresh_mint.0,
+                mint_component: fresh_mint.0.address(),
                 resource_address: fresh_mint.2,
             });
 
