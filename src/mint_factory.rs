@@ -63,8 +63,8 @@ mod mint_factory {
                     metadata_locker_updater => admin_rule.clone();
                 },
                 init {
-                    "name" => "OT Mint Factory".to_owned(), updatable;
-                    "description" => "The mint factory for OT Collections".to_owned(), updatable;
+                    "name" => "OP Mint Factory".to_owned(), updatable;
+                    "description" => "The mint factory for Outpost Collections".to_owned(), updatable;
                     "dapp_definition" => component_address, updatable;
                     "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), updatable;
                 }
@@ -83,7 +83,7 @@ mod mint_factory {
             preview_image_url: String,
             mint_price: Decimal,
             mint_currency: ResourceAddress,
-            collection_cap: u64,
+            initial_sale_cap: u64,
             rules: Vec<bool>,
             depositer_admin: ResourceAddress,
             royalties_enabled: bool,
@@ -101,6 +101,7 @@ mod mint_factory {
             permissioned_buyers_input: Vec<ResourceAddress>,
             restricted_currencies_input: Vec<ResourceAddress>,
             minimum_royalty_amounts_input: HashMap<ResourceAddress, Decimal>,
+            
         ) -> (Global<RoyalNFTs>, NonFungibleBucket, ResourceAddress) {
 
 
@@ -111,7 +112,7 @@ mod mint_factory {
                 preview_image_url,
                 mint_price,
                 mint_currency,
-                collection_cap,
+                initial_sale_cap,
                 rules,
                 depositer_admin,
                 royalties_enabled,
@@ -122,6 +123,7 @@ mod mint_factory {
                 permissioned_buyers_input,
                 restricted_currencies_input,
                 minimum_royalty_amounts_input,
+               
             );
 
             Runtime::emit_event(FreshMint {
