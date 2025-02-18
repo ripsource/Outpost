@@ -1,8 +1,6 @@
 use scrypto::prelude::*;
-// use crate::royal_mint_example::royal_nft;
-// use crate::royal_mint_example::royal_nft::RoyalNFTs;
-// use crate::the_mint::royal_nft::RoyalNFTs_start_minting_nft;
-// use crate::the_mint::royal_nft::*;
+
+
 use crate::minter::royal_nft::*;
 
 #[derive(ScryptoSbor, ScryptoEvent)]
@@ -15,6 +13,8 @@ pub struct FreshMint {
 #[blueprint]
 #[events(FreshMint)]
 mod mint_factory {
+    use crate::minter::{MintingConfig, NFTMetadata, RoyaltyConfigInput};
+
 
     struct MintFactory {
         
@@ -77,52 +77,16 @@ mod mint_factory {
         }
 
         pub fn create_royal_nft(&mut self,
-            name: String,
-            description: String,
-            icon_url: String,
-            preview_image_url: String,
-            mint_price: Decimal,
-            mint_currency: ResourceAddress,
-            initial_sale_cap: u64,
-            rules: Vec<bool>,
-            depositer_admin: ResourceAddress,
-            royalties_enabled: bool,
-            royalty_percent: Decimal,
-            maximum_royalty_percent: Decimal,
-               // These represent some advanced setting that creators can enable to heighten the level of royalty enforcement
-            // and use to create new reactive/dynamic features for their NFTs.
-            limits: Vec<bool>,
-            // 0. limit_buyers: bool,
-            // 1. limit_currencies: bool,
-            // 2. limit_dapps: bool,
-            // 3. limit_private_trade: bool,
-            // 4. minimum_royalties: bool,
-            permissioned_dapps_input: HashMap<ComponentAddress, ResourceAddress>,
-            permissioned_buyers_input: Vec<ResourceAddress>,
-            restricted_currencies_input: Vec<ResourceAddress>,
-            minimum_royalty_amounts_input: HashMap<ResourceAddress, Decimal>,
-            
+            setup_metadata: NFTMetadata,
+            minting_config: MintingConfig,
+            royalty_config_input: RoyaltyConfigInput,       
         ) -> (Global<RoyalNFTs>, NonFungibleBucket, ResourceAddress) {
 
 
             let fresh_mint: (Global<RoyalNFTs>, NonFungibleBucket, ResourceAddress) = RoyalNFTs::start_minting_nft(
-                name,
-                description,
-                icon_url,
-                preview_image_url,
-                mint_price,
-                mint_currency,
-                initial_sale_cap,
-                rules,
-                depositer_admin,
-                royalties_enabled,
-                royalty_percent,
-                maximum_royalty_percent,
-                limits,
-                permissioned_dapps_input,
-                permissioned_buyers_input,
-                restricted_currencies_input,
-                minimum_royalty_amounts_input,
+                setup_metadata,
+                minting_config,
+                royalty_config_input
                
             );
 

@@ -11,7 +11,6 @@ struct AdminKey {}
 #[blueprint]
 #[types(ResourceAddress, Vault, MarketPlacePermission, AdminKey)]
 mod generic_marketplace {
-    use std::{path::Component, result};
 
     struct GenericMarketplace {
         marketplace_listing_key_vault: Vault,
@@ -185,7 +184,7 @@ mod generic_marketplace {
                     //     scrypto_args!(nfgid, payment, proof_creation.clone(), account_recipient),
                     // );
 
-                    let mut result = address.call_raw::<(Bucket, Bucket, Option<Bucket>)>(
+                    let result = address.call_raw::<(Bucket, Bucket, Option<Bucket>)>(
                         "purchase_multi_royal_listings",
                         scrypto_args!([nfgid], payment, account_recipient, proof_creation.clone()),
                     );
@@ -223,7 +222,7 @@ mod generic_marketplace {
 
                     let combined_payment = full_payment.take(total_payment);
 
-                    let mut result = address.call_raw::<(Bucket, Bucket, Option<Bucket>)>(
+                    let result = address.call_raw::<(Bucket, Bucket, Option<Bucket>)>(
                         "purchase_multi_royal_listings",
                         scrypto_args!(
                             nfgids,
@@ -411,7 +410,7 @@ mod generic_marketplace {
             mut payment: Bucket,
             account: Global<Account>,
             preview_mint_address: Global<AnyComponent>,
-        ) -> Vec<Bucket> {
+        ) -> (Bucket, Vec<NonFungibleBucket>, Option<Bucket>) {
             let fee_amount = payment.amount().checked_mul(self.mint_fee).unwrap();
 
             let fee =
@@ -434,10 +433,11 @@ mod generic_marketplace {
                 .create_proof_of_non_fungibles(&indexset![nflid])
                 .into();
 
-            let receipt_and_change: Vec<Bucket> = preview_mint_address.call_raw::<Vec<Bucket>>(
-                "purchase_preview_mint",
-                scrypto_args!(payment, account, proof_creation),
-            );
+            let receipt_and_change: (Bucket, Vec<NonFungibleBucket>, Option<Bucket>) =
+                preview_mint_address.call_raw::<(Bucket, Vec<NonFungibleBucket>, Option<Bucket>)>(
+                    "mint_preview_nft",
+                    scrypto_args!(payment, account, proof_creation),
+                );
 
             receipt_and_change
         }

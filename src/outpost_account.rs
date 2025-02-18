@@ -32,7 +32,6 @@ type Unit = ();
 #[types(Listing, ResourceAddress, NonFungibleGlobalId, Vault, Hash, Unit)]
 #[events(ListingCreated, ListingUpdated, ListingCanceled, ListingPurchased)]
 mod opentrader {
-    use scrypto::blueprints::account;
 
     enable_package_royalties! {
         create_trader => Xrd(dec!(0.000000000000000001).into());
@@ -405,7 +404,7 @@ mod opentrader {
         pub fn purchase_multi_royal_listings(
             &mut self,
             nfgids: Vec<NonFungibleGlobalId>,
-            mut payment: FungibleBucket,
+            payment: FungibleBucket,
             account_recipient: Global<Account>,
             permission: Proof,
         ) -> (Bucket, Bucket, Option<Bucket>) {
@@ -1169,14 +1168,6 @@ mod opentrader {
                 .get(&nft_id)
                 .expect("[revoke_permission] Listing not found");
 
-            // let emitter_proof = self
-            //     .emitter_badge
-            //     .as_non_fungible()
-            //     .create_proof_of_non_fungibles(&indexset![self.emitter_badge_local.clone()]);
-
-            // self.event_manager
-            //     .update_listing_event(listing.clone(), nft_id, emitter_proof.into());
-
             self.update_listing_event(listing.clone(), nft_id);
         }
 
@@ -1199,14 +1190,6 @@ mod opentrader {
                 .get(&nft_id)
                 .expect("[add_permission] Listing not found");
 
-            // let emitter_proof = self
-            //     .emitter_badge
-            //     .as_non_fungible()
-            //     .create_proof_of_non_fungibles(&indexset![self.emitter_badge_local.clone()]);
-
-            // self.event_manager
-            //     .update_listing_event(listing.clone(), nft_id, emitter_proof.into());
-
             self.update_listing_event(listing.clone(), nft_id);
         }
 
@@ -1223,14 +1206,6 @@ mod opentrader {
                 .listings
                 .get(&nft_id)
                 .expect("[change_price] Listing not found");
-
-            // let emitter_proof = self
-            //     .emitter_badge
-            //     .as_non_fungible()
-            //     .create_proof_of_non_fungibles(&indexset![self.emitter_badge_local.clone()]);
-
-            // self.event_manager
-            //     .update_listing_event(listing.clone(), nft_id, emitter_proof.into());
 
             self.update_listing_event(listing.clone(), nft_id);
         }
@@ -1253,17 +1228,6 @@ mod opentrader {
                     .listings
                     .get(&nft_id)
                     .expect("[change_price] Listing not found");
-
-                // let emitter_proof = self
-                //     .emitter_badge
-                //     .as_non_fungible()
-                //     .create_proof_of_non_fungibles(&indexset![self.emitter_badge_local.clone()]);
-
-                // self.event_manager.cancel_listing_event(
-                //     listing.clone(),
-                //     nft_id.clone(),
-                //     emitter_proof.into(),
-                // );
 
                 self.cancel_listing_event(listing.clone(), nft_id.clone());
             }
@@ -1365,9 +1329,6 @@ mod opentrader {
                 .emitter_badge
                 .as_non_fungible()
                 .create_proof_of_non_fungibles(&indexset![self.emitter_badge_local.clone()]);
-
-            // self.event_manager
-            //     .multi_purchase_event(listings, emitter_proof.clone().into());
 
             self.multi_purchase_event(listings);
 

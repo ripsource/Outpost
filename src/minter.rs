@@ -1,7 +1,5 @@
 use scrypto::prelude::*;
 
-use crate::mint_factory::*;
-
 /// Overview
 // This blueprint is an example of a way to mint a new Royalty NFT collection, including a random mint/reveal process.
 // However, not all of this is required for a new collection and creators can choose to implement only the parts that
@@ -22,6 +20,7 @@ use crate::mint_factory::*;
 
 #[derive(ScryptoSbor)]
 struct RoyaltyConfig {
+    pub restricted_movement: bool,
     /// The royalty percentage to be paid to the creator of the Royal NFTs (e.g. 0.1 = 10% - maximum value is 1)
     royalty_percent: Decimal,
     /// The maximum royalty percentage that can be set - once set can not be increased. It can be decreased though.
@@ -109,19 +108,87 @@ pub struct CancelMint {
     pub resource_address: ResourceAddress,
 }
 
-// #[derive(ScryptoSbor, ScryptoEvent)]
-// struct NewOpenTradeMint {
-//     resource_address: ResourceAddress,
-//     minting_component: ComponentAddress,
-//     royalty_component: ComponentAddress,
-// }
+#[derive(ScryptoSbor)]
+pub struct NFTMetadata {
+    pub name: String,
+    pub description: String,
+    pub icon_url: String,
+    pub preview_image_url: String,
+}
+#[derive(ScryptoSbor)]
+pub struct MintingConfig {
+    pub mint_price: Decimal,
+    pub mint_currency: ResourceAddress,
+    pub initial_sale_cap: u64,
+    pub rules: NFTRules,
+}
 
-// #[derive(ScryptoSbor, ScryptoEvent)]
-// struct NewOpenTradeReveal {
-//     resource_address: ResourceAddress,
-//     minting_component: ComponentAddress,
-//     royalty_component: ComponentAddress,
-// }
+#[derive(ScryptoSbor)]
+pub struct RoyaltyLimits {
+    pub limit_buyers: bool,
+    pub limit_currencies: bool,
+    pub limit_dapps: bool,
+    pub limit_private_trade: bool,
+    pub minimum_royalties: bool,
+}
+
+#[derive(ScryptoSbor)]
+pub struct NFTRules {
+    pub burnable: bool,
+    pub burn_locked: bool,
+    pub metadata_updatable: bool,
+    pub metadata_locked: bool,
+    pub royalty_config_locked: bool,
+}
+
+#[derive(ScryptoSbor)]
+pub struct RoyaltyConfigInput {
+    pub depositer_admin: ResourceAddress,
+    pub royalties_enabled: bool,
+    pub royalty_percent: Decimal,
+    pub maximum_royalty_percent: Decimal,
+}
+
+#[derive(ScryptoSbor)]
+pub struct CollectionInfo {
+    pub name: String,
+    pub description: String,
+    pub collection_image: String,
+    pub preview_image_url: String,
+    pub metadata: KeyValueStore<NonFungibleLocalId, NFTData>,
+}
+
+#[derive(ScryptoSbor)]
+pub struct MintingSettings {
+    pub mint_price: Decimal,
+    pub mint_currency: ResourceAddress,
+    pub initial_sale_cap: u64,
+    pub mint_id: u64,
+    pub mint_enabled_after: Option<Instant>,
+    pub reveal_step: bool,
+    pub mint_payments_vault: Vault,
+    pub minting_venue: KeyValueStore<ResourceAddress, ()>,
+}
+
+#[derive(ScryptoSbor)]
+pub struct AdminConfig {
+    pub nft_creator_admin_manager: NonFungibleResourceManager,
+    pub nft_creator_admin: ResourceAddress,
+    pub depositer_admin: ResourceAddress,
+    pub depositer_rule: AccessRule,
+    pub virtual_account_admin: Option<Global<Account>>,
+    pub virtual_admin_minting_badge: FungibleResourceManager,
+    pub temp_admin: bool,
+    pub internal_creator_admin: Vault,
+}
+
+#[derive(ScryptoSbor)]
+pub struct TransactionTracking {
+    pub latest_transaction: Option<(ResourceAddress, Vec<NonFungibleLocalId>, Global<Account>)>,
+    pub transient_tokens: Vault,
+    pub transient_token_address: ResourceAddress,
+    pub transient_admin_vault: Vault,
+}
 
 #[blueprint]
 #[events(RevealMint, MintComplete, CancelMint)]
@@ -174,192 +241,60 @@ mod royal_nft {
         cancel_public_mint => restrict_to: [admin];
         withdraw_from_mint_vault => restrict_to: [admin];
         withdraw_from_royalty_vault => restrict_to: [admin];
+        remove_royalty_config => restrict_to: [admin];
     }
     }
 
     struct RoyalNFTs {
         nft_manager: NonFungibleResourceManager,
-        nft_creator_admin_manager: NonFungibleResourceManager,
-        nft_creator_admin: ResourceAddress,
-
-        // NFT data
-        preview_image_url: String,
-        description: String,
-        reveal_step: bool,
-        initial_sale_cap: u64,
-        mint_enabled_after: Option<Instant>,
-        // reveal data to be uploaded by creator
-        metadata: KeyValueStore<NonFungibleLocalId, NFTData>,
-
-        // the admin address input required to sync with the OpenTrader system
-        depositer_admin: ResourceAddress,
-
-        // deposit admin rule - for royalty enabled collections
-        depositer_rule: AccessRule,
-
-        /// The price to mint a Royal NFT NFT
-        mint_price: Decimal,
-
-        /// The selected currrency for minting Royal NFTs, e.g. XRD
-        mint_currency: ResourceAddress,
-
-        /// The current mint ID for integer NFTs minted
-        mint_id: u64,
-
-        /// The vault for storing mint payments
-        mint_payments_vault: Vault,
-
-        /// All the royalty payments that have been made for different currencies
-        royalty_vaults: KeyValueStore<ResourceAddress, Vault>,
-
-        /// The address of the royalty component (which in this case, is this same component)
-        royalty_component: ComponentAddress,
-
-        /// The creator royalty settings
+        mint_component: ComponentAddress,
+        collection_info: CollectionInfo,
+        minting_settings: MintingSettings,
+        admin_config: AdminConfig,
         royalty_config: RoyaltyConfig,
-
-        /// virtual_account temp admin
-        virtual_account_admin: Option<Global<Account>>,
-
-        /// virtual mint badge
-        virtual_admin_minting_badge: FungibleResourceManager,
-
-        /// enable temp admin for minting
-        temp_admin: bool,
-
-        /// internal creator admin
-        internal_creator_admin: Vault,
-
-        /// Specify minting venue/marketplace - i.e. specific marketplaces that can mint the NFTs.
-        /// This is useful if a creator wants to allow minting of their NFTs on a specific marketplace.
-        minting_venue: KeyValueStore<ResourceAddress, ()>,
-        /// Latest transaction tracker for confirming the transaction has been cleared
-        latest_transaction: Option<(ResourceAddress, Vec<NonFungibleLocalId>, Global<Account>)>,
-        /// Transient tokens for clearing transactions
-        transient_tokens: Vault,
-        /// Transient token address
-        transient_token_address: ResourceAddress,
-        /// transient admin vault (seperate admin required beyond global caller as depositer rules are buggy in scrypto for component auth + deposit restrictions)
-        transient_admin_vault: Vault,
+        royalty_vaults: KeyValueStore<ResourceAddress, Vault>,
+        royalty_component: ComponentAddress,
+        transaction_tracking: TransactionTracking,
     }
 
     impl RoyalNFTs {
         pub fn start_minting_nft(
-            // top-level resource metadata
-            name: String,
-            description: String,
-            icon_url: String,
-
-            // preview image used prior to revealing a collection
-            preview_image_url: String,
-
-            // generic minting inputs (could be any set up for minting the collection)
-            mint_price: Decimal,
-            mint_currency: ResourceAddress,
-            initial_sale_cap: u64,
-
-            // NFT rule settings
-            rules: Vec<bool>,
-            // 0. burnable: bool,
-            // 1. burn_locked: bool,
-            // 2. metadata_updatable: bool,
-            // 3. metadata_locked: bool,
-            // (reccommend setting to false and later locking the configuration if desired)
-            // 4. royalty_config_locked: bool,
-
-            // Required to enable trader accounts to interact with royalty NFTs
-            depositer_admin: ResourceAddress,
-
-            // royalty settings input
-            royalties_enabled: bool,
-            royalty_percent: Decimal,
-            maximum_royalty_percent: Decimal,
-
-            // These represent some advanced setting that creators can enable to heighten the level of royalty enforcement
-            // and use to create new reactive/dynamic features for their NFTs.
-            limits: Vec<bool>,
-            // 0. limit_buyers: bool,
-            // 1. limit_currencies: bool,
-            // 2. limit_dapps: bool,
-            // 3. limit_private_trade: bool,
-            // 4. minimum_royalties: bool,
-
-            // This is relevant for transfers of an NFT to a component/Dapp - not for trading the NFTs.
-            permissioned_dapps_input: HashMap<ComponentAddress, ResourceAddress>,
-
-            // Only applicable if limit buyers is set to true
-            permissioned_buyers_input: Vec<ResourceAddress>,
-
-            // only applicable if you want to restrict the currencies that can be used to pay royalties
-            restricted_currencies_input: Vec<ResourceAddress>,
-            // if restricting the currencies you can then also add minimum amounts for how much royalty you should receive.
-            // This is set so that if you require 20 XRD as a minimum, and your %fee is 10% - then atleast a 200 XRD sale would be required.
-            minimum_royalty_amounts_input: HashMap<ResourceAddress, Decimal>,
+            setup_metadata: NFTMetadata,
+            minting_config: MintingConfig,
+            royalty_config_input: RoyaltyConfigInput,
         ) -> (Global<RoyalNFTs>, NonFungibleBucket, ResourceAddress) {
             let (nft_address_reservation, royalty_component_address) =
                 Runtime::allocate_component_address(RoyalNFTs::blueprint_id());
 
             assert!(
-                royalty_percent <= Decimal::from(1),
+                royalty_config_input.royalty_percent <= Decimal::from(1),
                 "Royalty percent must be less than 100%"
             );
 
             assert!(
-                royalty_percent <= maximum_royalty_percent,
+                royalty_config_input.royalty_percent
+                    <= royalty_config_input.maximum_royalty_percent,
                 "Royalty percent must be less than maximum royalty"
             );
 
-            let permissioned_dapps: KeyValueStore<ComponentAddress, ResourceAddress> =
-                KeyValueStore::new();
-            let permissioned_buyers: KeyValueStore<ResourceAddress, ()> = KeyValueStore::new();
-            let permitted_currencies: KeyValueStore<ResourceAddress, ()> = KeyValueStore::new();
-            let minimum_royalty_amounts: KeyValueStore<ResourceAddress, Decimal> =
-                KeyValueStore::new();
-
-            // 0. limit_buyers: bool,
-            // 1. limit_currencies: bool,
-            // 2. limit_dapps: bool,
-            // 3. limit_private_trade: bool,
-            // 4. minimum_royalties: bool,
-
-            if limits[2] {
-                for component_address in permissioned_dapps_input {
-                    permissioned_dapps.insert(component_address.0, component_address.1);
-                }
-            }
-
-            if limits[0] {
-                for resource_address in permissioned_buyers_input {
-                    permissioned_buyers.insert(resource_address, ());
-                }
-            }
-
-            if limits[1] {
-                for currency in restricted_currencies_input {
-                    permitted_currencies.insert(currency, ());
-                }
-                for (currency, amount) in minimum_royalty_amounts_input {
-                    minimum_royalty_amounts.insert(currency, amount);
-                }
-            }
-
             // create the royalty config
             let royalty_config = RoyaltyConfig {
-                royalty_percent,
-                maximum_royalty_percent,
-                limit_buyers: limits[0],
-                limit_currencies: limits[1],
-                limit_dapps: limits[2],
-                limit_private_trade: limits[3],
-                minimum_royalties: limits[4],
-                permitted_currencies,
-                minimum_royalty_amounts,
-                permissioned_dapps,
-                permissioned_buyers,
-                royalty_configuration_locked: rules[4],
+                restricted_movement: royalty_config_input.royalties_enabled,
+                royalty_percent: royalty_config_input.royalty_percent,
+                maximum_royalty_percent: royalty_config_input.maximum_royalty_percent,
+                limit_buyers: false,
+                limit_currencies: false,
+                limit_dapps: false,
+                limit_private_trade: false,
+                minimum_royalties: false,
+                permitted_currencies: KeyValueStore::new(),
+                minimum_royalty_amounts: KeyValueStore::new(),
+                permissioned_dapps: KeyValueStore::new(),
+                permissioned_buyers: KeyValueStore::new(),
+                royalty_configuration_locked: false,
             };
 
-            let admin_name = format!("{} OP Admin", name);
+            let admin_name = format!("{} OP Admin", setup_metadata.name);
 
             let local_id_string = StringNonFungibleLocalId::new("creator_key".to_owned()).unwrap();
             // create the unique badge for the creator of the collection
@@ -380,7 +315,7 @@ mod royal_nft {
                     }
                 })
                 .mint_initial_supply([(local_id_string, CreatorKey {
-                    collection: name.clone(),
+                    collection: setup_metadata.name.clone(),
                     authority: "Admin".to_owned(),
                     minting_component: royalty_component_address,
                     royalty_component: royalty_component_address,
@@ -403,39 +338,45 @@ mod royal_nft {
             // In this example, we're allowing the component and trader accounts to deposit NFT NFTs.
             let depositer_admin_rule: AccessRule;
 
-            if royalties_enabled {
+            let change_movement_restrictions_rule: AccessRule;
+
+            if royalty_config_input.royalties_enabled {
                 depositer_admin_rule = rule!(
-                    require_amount(1, depositer_admin)
+                    require_amount(1, royalty_config_input.depositer_admin)
                         || require_amount(1, internal_creator_admin.resource_address())
                         || require(nft_creator_admin.resource_address())
                 );
+                change_movement_restrictions_rule =
+                    rule!(require_amount(1, internal_creator_admin.resource_address()));
             } else {
                 depositer_admin_rule = rule!(allow_all);
+                change_movement_restrictions_rule =
+                    rule!(require(nft_creator_admin.resource_address()));
             }
 
             let burn_rule: AccessRule;
-            if rules[0] {
+            if minting_config.rules.burnable {
                 burn_rule = creator_admin_rule.clone();
             } else {
                 burn_rule = rule!(deny_all);
             }
 
             let burn_locked_rule: AccessRule;
-            if rules[1] {
+            if minting_config.rules.burn_locked {
                 burn_locked_rule = rule!(deny_all);
             } else {
                 burn_locked_rule = creator_admin_rule.clone();
             }
 
             let metadata_updatable_rule: AccessRule;
-            if rules[2] {
+            if minting_config.rules.metadata_updatable {
                 metadata_updatable_rule = global_caller_badge_rule.clone();
             } else {
                 metadata_updatable_rule = rule!(deny_all);
             }
 
             let metadata_locked_rule: AccessRule;
-            if rules[3] {
+            if minting_config.rules.metadata_locked {
                 metadata_locked_rule = rule!(deny_all);
             } else {
                 metadata_locked_rule = creator_admin_rule.clone();
@@ -458,7 +399,7 @@ mod royal_nft {
             // If a creator wishes to leave the system completey - they can update the rules via methods on this component.
             .deposit_roles(deposit_roles! {
                 depositor => depositer_admin_rule.clone();
-                depositor_updater => depositer_admin_rule;
+                depositor_updater => change_movement_restrictions_rule;
             })
             .non_fungible_data_update_roles(non_fungible_data_update_roles! {
                 non_fungible_data_updater => metadata_updatable_rule;
@@ -472,9 +413,9 @@ mod royal_nft {
                     metadata_setter_updater => creator_admin_rule.clone();
                 },
                 init {
-                    "name" => name.to_owned(), updatable;
-                    "description" => description.to_owned(), updatable;
-                    "icon_url" => Url::of(icon_url.clone()), updatable;
+                    "name" => setup_metadata.name.to_owned(), updatable;
+                    "description" => setup_metadata.description.to_owned(), updatable;
+                    "icon_url" => Url::of(setup_metadata.icon_url.clone()), updatable;
                     "metadata_standard" => "Outpost V1".to_owned(), updatable;
                     "info_url" => Url::of("https://trove.tools"), updatable;
                     "social_urls" => vec![Url::of("https://x.com/TroveEco")], updatable;
@@ -491,7 +432,7 @@ mod royal_nft {
             })
             .create_with_no_initial_supply();
 
-            let component_name = format!("{} OP", name);
+            let component_name = format!("{} OP", setup_metadata.name);
 
             let virtual_account_admin: Option<Global<Account>> = None;
 
@@ -548,37 +489,56 @@ mod royal_nft {
                     .set_depositable(rule!(require(transient_admin_badge.resource_address())));
             });
 
-            let component_adresss = Self {
-                nft_manager,
-                royalty_component: royalty_component_address.clone(),
+            let collection_info = CollectionInfo {
+                name: setup_metadata.name.clone(),
+                description: setup_metadata.description.clone(),
+                collection_image: setup_metadata.icon_url.clone(),
+                preview_image_url: setup_metadata.preview_image_url.clone(),
+                metadata: KeyValueStore::new(),
+            };
+
+            let minting_settings = MintingSettings {
+                mint_price: minting_config.mint_price,
+                mint_currency: minting_config.mint_currency.clone(),
+                initial_sale_cap: minting_config.initial_sale_cap,
+                mint_id: 0,
+                mint_enabled_after: None,
+                reveal_step: false,
+                mint_payments_vault: Vault::new(minting_config.mint_currency),
+                minting_venue: KeyValueStore::new(),
+            };
+
+            let admin_config = AdminConfig {
                 nft_creator_admin_manager: nft_creator_admin.resource_manager(),
                 nft_creator_admin: nft_creator_admin.resource_address(),
+                depositer_admin: royalty_config_input.depositer_admin,
                 depositer_rule: rule!(
-                    require_amount(1, depositer_admin)
+                    require_amount(1, royalty_config_input.depositer_admin)
                         || require(global_caller(royalty_component_address))
                 ),
-                preview_image_url,
-                description,
-                reveal_step: false,
-                mint_enabled_after: None,
-                initial_sale_cap,
-                metadata: KeyValueStore::new(),
-                depositer_admin,
-                mint_price,
-                mint_currency: mint_currency.clone(),
-                mint_id: 0,
-                mint_payments_vault: Vault::new(mint_currency),
-                royalty_vaults: KeyValueStore::new(),
-                royalty_config,
                 virtual_account_admin,
-                internal_creator_admin: Vault::with_bucket(internal_creator_admin.into()),
-                temp_admin: false,
                 virtual_admin_minting_badge,
-                minting_venue: KeyValueStore::new(),
+                temp_admin: false,
+                internal_creator_admin: Vault::with_bucket(internal_creator_admin.into()),
+            };
+
+            let transaction_tracking = TransactionTracking {
                 latest_transaction: None,
-                transient_token_address,
                 transient_tokens: transient_vault,
+                transient_token_address,
                 transient_admin_vault: Vault::with_bucket(transient_admin_badge.into()),
+            };
+
+            let component_adresss = Self {
+                nft_manager,
+                mint_component: royalty_component_address,
+                collection_info,
+                minting_settings,
+                admin_config,
+                royalty_config,
+                royalty_vaults: KeyValueStore::new(),
+                royalty_component: royalty_component_address.clone(),
+                transaction_tracking,
             }
             .instantiate()
             .prepare_to_globalize(OwnerRole::None)
@@ -594,7 +554,7 @@ mod royal_nft {
                     "name" => component_name.to_owned(), locked;
                     "description" => "An NFT minting and royalty component.".to_owned(), locked;
                     "dapp_definition" => royalty_component_address, locked;
-                    "icon_url" => Url::of(icon_url), locked;
+                    "icon_url" => Url::of(setup_metadata.icon_url), locked;
                 }
             ))
             .roles(roles!(
@@ -612,15 +572,15 @@ mod royal_nft {
         }
 
         pub fn creator_admin(&self) -> ResourceAddress {
-            self.nft_creator_admin
+            self.admin_config.nft_creator_admin
         }
 
         pub fn mint_temp_admin(&mut self) -> FungibleBucket {
-            self.virtual_admin_minting_badge.mint(1)
+            self.admin_config.virtual_admin_minting_badge.mint(1)
         }
 
         pub fn withdraw_from_mint_vault(&mut self) -> Bucket {
-            self.mint_payments_vault.take_all()
+            self.minting_settings.mint_payments_vault.take_all()
         }
 
         pub fn withdraw_from_royalty_vault(&mut self, currency: ResourceAddress) -> Bucket {
@@ -636,11 +596,11 @@ mod royal_nft {
             recipient: Option<Global<Account>>,
             data: Vec<NFTData>,
         ) -> Option<Vec<Bucket>> {
-            if auth_proof.resource_address() == self.nft_creator_admin {
-                auth_proof.check(self.nft_creator_admin);
+            if auth_proof.resource_address() == self.admin_config.nft_creator_admin {
+                auth_proof.check(self.admin_config.nft_creator_admin);
             } else {
-                if self.temp_admin {
-                    auth_proof.check(self.virtual_admin_minting_badge.address());
+                if self.admin_config.temp_admin {
+                    auth_proof.check(self.admin_config.virtual_admin_minting_badge.address());
                 } else {
                     panic!("Unauthorized");
                 }
@@ -665,23 +625,23 @@ mod royal_nft {
                     attributes: item.attributes,
                 };
 
-                let nflid = NonFungibleLocalId::Integer(self.mint_id.into());
+                let nflid = NonFungibleLocalId::Integer(self.minting_settings.mint_id.into());
 
                 let mint = self.nft_manager.mint_non_fungible(&nflid, nft);
 
                 return_buckets.push(mint.into());
 
-                self.mint_id += 1;
+                self.minting_settings.mint_id += 1;
             }
 
             if recipient.is_some() {
                 let mut direct_deposit = recipient.unwrap();
                 // for some reason component caller auth was failing, I could just be dumb - probably dumb - yee think was a frontend issue, ffs - leaving it cause it might as well and works. Ta da
-                let internal_admin = self.internal_creator_admin.take(1);
+                let internal_admin = self.admin_config.internal_creator_admin.take(1);
                 internal_admin.as_fungible().authorize_with_amount(1, || {
                     direct_deposit.try_deposit_batch_or_abort(return_buckets, None);
                 });
-                self.internal_creator_admin.put(internal_admin);
+                self.admin_config.internal_creator_admin.put(internal_admin);
                 None
             } else {
                 Some(return_buckets)
@@ -689,7 +649,7 @@ mod royal_nft {
         }
 
         pub fn cancel_public_mint(&mut self) {
-            self.reveal_step = false;
+            self.minting_settings.reveal_step = false;
             let cancel_mint = CancelMint {
                 mint_component: self.royalty_component,
                 resource_address: self.nft_manager.address(),
@@ -705,13 +665,16 @@ mod royal_nft {
             mint_price: Decimal,
             minting_venues: Vec<ResourceAddress>,
         ) {
-            self.initial_sale_cap = initial_sale_cap;
-            self.mint_price = mint_price;
-            self.reveal_step = true;
+            self.minting_settings.initial_sale_cap = initial_sale_cap;
+            self.minting_settings.mint_price = mint_price;
+            self.minting_settings.mint_price = mint_price;
+            self.minting_settings.reveal_step = true;
+
             for venue in minting_venues {
-                self.minting_venue.insert(venue, ());
+                self.minting_settings.minting_venue.insert(venue, ());
             }
-            self.mint_enabled_after = Some(enable_mint_after);
+
+            self.minting_settings.mint_enabled_after = Some(enable_mint_after);
 
             let reveal_mint = RevealMint {
                 mint_component: self.royalty_component,
@@ -727,15 +690,15 @@ mod royal_nft {
         }
 
         pub fn get_transient_token_address(&self) -> ResourceAddress {
-            self.transient_token_address
+            self.transaction_tracking.transient_token_address
         }
 
         pub fn add_permissioned_mint_buyer(&mut self, buyer: ResourceAddress) {
-            self.minting_venue.insert(buyer, ());
+            self.minting_settings.minting_venue.insert(buyer, ());
         }
 
         pub fn remove_permissioned_mint_buyer(&mut self, buyer: ResourceAddress) {
-            self.minting_venue.remove(&buyer);
+            self.minting_settings.minting_venue.remove(&buyer);
         }
         pub fn mint_standard_preview_nft(
             &mut self,
@@ -744,24 +707,25 @@ mod royal_nft {
             permission: Proof,
         ) -> (Vec<NonFungibleBucket>, Bucket) {
             assert!(
-                self.reveal_step == true,
+                self.minting_settings.reveal_step == true,
                 "[Mint Reveal] : This NFT doesn't have a reveal step enabled"
             );
             assert!(
-                payment.amount() >= self.mint_price,
+                payment.amount() >= self.minting_settings.mint_price,
                 "[Mint Preview NFT] : Insufficient funds to mint NFT"
             );
+
             assert!(
-                payment.resource_address() == self.mint_currency,
+                payment.resource_address() == self.minting_settings.mint_currency,
                 "[Mint Preview NFT] : Incorrect currency to mint NFT"
             );
 
             assert!(
-                self.mint_id < self.initial_sale_cap,
+                self.minting_settings.mint_id < self.minting_settings.initial_sale_cap,
                 "[Mint Preview NFT] : sale cap reached"
             );
 
-            if self.mint_id == self.initial_sale_cap {
+            if self.minting_settings.mint_id == self.minting_settings.initial_sale_cap {
                 let reveal_mint = MintComplete {
                     mint_component: self.royalty_component,
                     resource_address: self.nft_manager.address(),
@@ -770,27 +734,29 @@ mod royal_nft {
                 Runtime::emit_event(reveal_mint);
             }
             assert!(
-                self.minting_venue
+                self.minting_settings
+                    .minting_venue
                     .get(&permission.resource_address())
                     .is_some(),
                 "Buy not via authorized seller"
             );
 
             assert!(
-                no_editions <= self.initial_sale_cap,
+                no_editions <= self.minting_settings.initial_sale_cap,
                 "Exceeds the initial sale cap"
             );
 
             let time_now = Clock::current_time_rounded_to_seconds();
             assert!(
-                self.mint_enabled_after.is_some() && time_now >= self.mint_enabled_after.unwrap(),
+                self.minting_settings.mint_enabled_after.is_some()
+                    && time_now >= self.minting_settings.mint_enabled_after.unwrap(),
                 "[Mint Preview NFT] : Minting not enabled yet"
             );
 
             let nft = NFT {
-                name: self.mint_id.to_string(),
-                description: self.description.to_string(),
-                key_image_url: Url::of(self.preview_image_url.clone()),
+                name: self.minting_settings.mint_id.to_string(),
+                description: self.collection_info.description.to_string(),
+                key_image_url: Url::of(self.collection_info.preview_image_url.clone()),
                 ipfs_uri: None,
                 attributes: vec![],
             };
@@ -799,15 +765,20 @@ mod royal_nft {
 
             for _ in 0..no_editions {
                 let minted_edition = self.nft_manager.mint_non_fungible(
-                    &NonFungibleLocalId::Integer(self.mint_id.into()),
+                    &NonFungibleLocalId::Integer(self.minting_settings.mint_id.into()),
                     nft.clone(),
                 );
                 minted_editions.push(minted_edition);
-                self.mint_id += 1;
+                self.minting_settings.mint_id += 1;
             }
             let dec_amount = Decimal::from(no_editions);
-            self.mint_payments_vault
-                .put(payment.take(dec_amount.checked_mul(self.mint_price).unwrap()));
+            self.minting_settings.mint_payments_vault.put(
+                payment.take(
+                    dec_amount
+                        .checked_mul(self.minting_settings.mint_price)
+                        .unwrap(),
+                ),
+            );
 
             (minted_editions, payment)
         }
@@ -818,93 +789,140 @@ mod royal_nft {
         pub fn mint_preview_nft(
             &mut self,
             mut payment: Bucket,
-            no_editions: u64,
-            account: Global<Account>,
+            account: Option<Global<Account>>,
             permission: Proof,
-        ) -> (Bucket, Vec<NonFungibleBucket>, Bucket) {
+        ) -> (Bucket, Vec<NonFungibleBucket>, Option<Bucket>) {
             assert!(
-                self.reveal_step == true,
+                self.minting_settings.reveal_step == true,
                 "[Mint Reveal] : This NFT doesn't have a reveal step enabled"
             );
-            assert!(
-                payment.amount() >= self.mint_price,
-                "[Mint Preview NFT] : Insufficient funds to mint NFT"
-            );
-            assert!(
-                payment.resource_address() == self.mint_currency,
-                "[Mint Preview NFT] : Incorrect currency to mint NFT"
-            );
 
             assert!(
-                self.mint_id < self.initial_sale_cap,
-                "[Mint Preview NFT] : Collection cap reached"
-            );
-
-            let time_now = Clock::current_time_rounded_to_seconds();
-            assert!(
-                self.mint_enabled_after.is_some() && time_now >= self.mint_enabled_after.unwrap(),
-                "[Mint Preview NFT] : Minting not enabled yet"
-            );
-
-            assert!(
-                self.minting_venue
+                self.minting_settings
+                    .minting_venue
                     .get(&permission.resource_address())
                     .is_some(),
                 "Buy not via authorized seller"
             );
 
+            // Calculate marketplace fee
+            let marketplace_fee_option: Option<Decimal> = permission
+                .skip_checking()
+                .resource_manager()
+                .get_metadata("marketplace_fee")
+                .unwrap();
+
+            let (_original_payment_amount, marketplace_fee) =
+                if let Some(marketplace_fee_rate) = marketplace_fee_option {
+                    let original = payment
+                        .amount()
+                        .checked_div(dec!(1) - marketplace_fee_rate)
+                        .unwrap();
+                    let fee = original.checked_mul(marketplace_fee_rate).unwrap();
+                    (original, fee)
+                } else {
+                    (payment.amount(), dec!(0))
+                };
+
+            let post_fee_mint_price = self
+                .minting_settings
+                .mint_price
+                .checked_mul(marketplace_fee)
+                .unwrap();
+
+            let editions_bought = payment.amount().checked_div(post_fee_mint_price).unwrap();
+
+            let editions_rounded = editions_bought
+                .checked_round(0, RoundingMode::ToNegativeInfinity)
+                .unwrap();
+
+            let payment_required = post_fee_mint_price.checked_mul(editions_rounded).unwrap();
+            let payment_bucket = payment.take(payment_required);
+
+            // (editions_bought, payment_bucket, change_bucket);
+
+            let editions_bought_u64: u64 = editions_rounded.try_into().unwrap();
+
+            self.minting_settings
+                .mint_payments_vault
+                .put(payment_bucket);
+
             assert!(
-                no_editions <= self.initial_sale_cap,
+                payment.amount() >= self.minting_settings.mint_price,
+                "[Mint Preview NFT] : Insufficient funds to mint NFT"
+            );
+            assert!(
+                payment.resource_address() == self.minting_settings.mint_currency,
+                "[Mint Preview NFT] : Incorrect currency to mint NFT"
+            );
+
+            assert!(
+                self.minting_settings.mint_id < self.minting_settings.initial_sale_cap,
+                "[Mint Preview NFT] : Collection cap reached"
+            );
+
+            let time_now = Clock::current_time_rounded_to_seconds();
+            assert!(
+                self.minting_settings.mint_enabled_after.is_some()
+                    && time_now >= self.minting_settings.mint_enabled_after.unwrap(),
+                "[Mint Preview NFT] : Minting not enabled yet"
+            );
+
+            assert!(
+                editions_bought_u64 <= self.minting_settings.initial_sale_cap,
                 "Exceeds the initial sale cap"
             );
 
             let mut minted_editions: Vec<NonFungibleBucket> = vec![];
 
             let nft = NFT {
-                name: self.mint_id.to_string(),
-                description: self.description.to_string(),
-                key_image_url: Url::of(self.preview_image_url.clone()),
+                name: self.minting_settings.mint_id.to_string(),
+                description: self.collection_info.description.to_string(),
+                key_image_url: Url::of(self.collection_info.preview_image_url.clone()),
                 ipfs_uri: None,
                 attributes: vec![],
             };
 
-            for _ in 0..no_editions {
+            for _ in 0..editions_bought_u64 {
                 let minted_edition = self.nft_manager.mint_non_fungible(
-                    &NonFungibleLocalId::Integer(self.mint_id.into()),
+                    &NonFungibleLocalId::Integer(self.minting_settings.mint_id.into()),
                     nft.clone(),
                 );
                 minted_editions.push(minted_edition);
-                self.mint_id += 1;
+                self.minting_settings.mint_id += 1;
 
-                if self.mint_id == self.initial_sale_cap {
+                if self.minting_settings.mint_id == self.minting_settings.initial_sale_cap {
                     let mint_complete = MintComplete {
                         mint_component: self.royalty_component,
                         resource_address: self.nft_manager.address(),
                     };
 
                     Runtime::emit_event(mint_complete);
-                    self.reveal_step = false;
+                    self.minting_settings.reveal_step = false;
                 }
             }
 
-            let transient_token = self.transient_tokens.take(1);
+            let mut transient_bucket: Option<Bucket> = None;
 
-            let nflid_vec = minted_editions
-                .iter()
-                .map(|nft| nft.non_fungible_local_id())
-                .collect::<Vec<NonFungibleLocalId>>();
+            if account.is_some() {
+                transient_bucket = Some(self.transaction_tracking.transient_tokens.take(1));
 
-            self.latest_transaction =
-                Some((self.nft_manager.address(), nflid_vec, account.clone()));
+                let nflid_vec = minted_editions
+                    .iter()
+                    .map(|nft| nft.non_fungible_local_id())
+                    .collect::<Vec<NonFungibleLocalId>>();
 
-            self.nft_manager.set_depositable(rule!(allow_all));
+                self.transaction_tracking.latest_transaction = Some((
+                    self.nft_manager.address(),
+                    nflid_vec,
+                    account.unwrap().clone(),
+                ));
 
-            let dec_amount = Decimal::from(no_editions);
-            self.mint_payments_vault
-                .put(payment.take(dec_amount.checked_mul(self.mint_price).unwrap()));
+                self.nft_manager.set_depositable(rule!(allow_all));
+            }
 
             // we return any change from the transaction and the preview NFT
-            (payment, minted_editions, transient_token.into())
+            (payment, minted_editions, transient_bucket)
         }
 
         pub fn cleared(&mut self, transient_token: FungibleBucket) {
@@ -914,14 +932,21 @@ mod royal_nft {
             );
 
             assert!(
-                transient_token.resource_address() == self.transient_token_address,
+                transient_token.resource_address()
+                    == self.transaction_tracking.transient_token_address,
                 "Transient token address must match"
             );
 
-            assert!(self.latest_transaction.is_some(), "No transaction to clear");
+            assert!(
+                self.transaction_tracking.latest_transaction.is_some(),
+                "No transaction to clear"
+            );
 
-            let (nft_resource, nft_local, account_recipient) =
-                self.latest_transaction.clone().unwrap();
+            let (nft_resource, nft_local, account_recipient) = self
+                .transaction_tracking
+                .latest_transaction
+                .clone()
+                .unwrap();
 
             for local_id in nft_local {
                 assert!(
@@ -931,29 +956,31 @@ mod royal_nft {
                 );
             }
 
-            let admin = self.transient_admin_vault.take(1);
+            let admin = self.transaction_tracking.transient_admin_vault.take(1);
 
             admin.authorize_with_all(|| {
-                self.transient_tokens.put(transient_token.into());
+                self.transaction_tracking
+                    .transient_tokens
+                    .put(transient_token.into());
             });
 
-            self.transient_admin_vault.put(admin);
+            self.transaction_tracking.transient_admin_vault.put(admin);
 
             // panic!("debug deposit");
 
             self.nft_manager.set_depositable(rule!(
-                require_amount(1, self.depositer_admin)
+                require_amount(1, self.admin_config.depositer_admin)
                     || require(global_caller(self.royalty_component))
             ));
         }
 
         pub fn add_virtual_account_admin(&mut self, account: Global<Account>) {
-            self.virtual_account_admin = Some(account);
+            self.admin_config.virtual_account_admin = Some(account);
         }
 
         pub fn remove_virtual_account_admin(&mut self) {
             let remove_account: Option<Global<Account>> = None;
-            self.virtual_account_admin = remove_account;
+            self.admin_config.virtual_account_admin = remove_account;
         }
 
         // this functions allows the creator to upload the metadata for the NFTs to conduct the reveal
@@ -962,28 +989,28 @@ mod royal_nft {
             auth_proof: Proof,
             data: Vec<(NonFungibleLocalId, NFTData)>,
         ) {
-            if auth_proof.resource_address() == self.nft_creator_admin {
-                auth_proof.check(self.nft_creator_admin);
+            if auth_proof.resource_address() == self.admin_config.nft_creator_admin {
+                auth_proof.check(self.admin_config.nft_creator_admin);
             } else {
-                if self.temp_admin {
-                    auth_proof.check(self.virtual_admin_minting_badge.address());
+                if self.admin_config.temp_admin {
+                    auth_proof.check(self.admin_config.virtual_admin_minting_badge.address());
                 } else {
                     panic!("Unauthorized");
                 }
             }
 
             for (nft_id, metadata) in data {
-                self.metadata.insert(nft_id, metadata);
+                self.collection_info.metadata.insert(nft_id, metadata);
             }
         }
 
         // this function updates the metadata on an NFT that has already been minted to reveal the collection
         pub fn mint_reveal(&mut self, auth_proof: Proof, data: Vec<(NonFungibleLocalId, NFTData)>) {
-            if auth_proof.resource_address() == self.nft_creator_admin {
-                auth_proof.check(self.nft_creator_admin);
+            if auth_proof.resource_address() == self.admin_config.nft_creator_admin {
+                auth_proof.check(self.admin_config.nft_creator_admin);
             } else {
-                if self.temp_admin {
-                    auth_proof.check(self.virtual_admin_minting_badge.address());
+                if self.admin_config.temp_admin {
+                    auth_proof.check(self.admin_config.virtual_admin_minting_badge.address());
                 } else {
                     panic!("Unauthorized");
                 }
@@ -1154,7 +1181,7 @@ mod royal_nft {
                 call_address.call_raw::<Option<Vec<Bucket>>>(manfiest_method, scrypto_args!(nft));
 
             self.nft_manager.set_depositable(rule!(
-                require_amount(1, self.depositer_admin)
+                require_amount(1, self.admin_config.depositer_admin)
                     || require(global_caller(self.royalty_component))
             ));
 
@@ -1234,6 +1261,19 @@ mod royal_nft {
 
         /// Only possible if the royalty configuration is not locked
         /// New percentage fee must be below the maximum set.
+
+        pub fn remove_royalty_config(&mut self) {
+            self.royalty_config.restricted_movement = false;
+            self.royalty_config.royalty_percent = dec!(0);
+
+            self.admin_config
+                .internal_creator_admin
+                .as_fungible()
+                .authorize_with_amount(1, || {
+                    self.nft_manager.set_depositable(rule!(allow_all));
+                });
+        }
+
         pub fn change_royalty_percentage_fee(&mut self, new_royalty_percent: Decimal) {
             assert!(
                 !self.royalty_config.royalty_configuration_locked,
@@ -1407,7 +1447,7 @@ mod royal_nft {
         }
 
         pub fn toggle_temp_admin(&mut self) {
-            self.temp_admin = !self.temp_admin;
+            self.admin_config.temp_admin = !self.admin_config.temp_admin;
         }
     }
 }

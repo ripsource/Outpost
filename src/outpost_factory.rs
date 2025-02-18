@@ -30,7 +30,6 @@ struct OutpostCreated {
 #[blueprint]
 #[events(OutpostCreated)]
 mod openhub {
-    use std::path::Component;
 
     struct OpenHub {
         /// The badge that is stored and locked in a trader account to authenticate event emitters
@@ -60,7 +59,7 @@ mod openhub {
             let (address_reservation, component_address) =
                 Runtime::allocate_component_address(OpenHub::blueprint_id());
 
-            let global_caller_badge_rule = rule!(require(global_caller(component_address)));
+            let _global_caller_badge_rule = rule!(require(global_caller(component_address)));
 
             let open_hub_admin: Bucket = ResourceBuilder::new_fungible(OwnerRole::None)
               .metadata(metadata!(
