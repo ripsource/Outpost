@@ -407,14 +407,15 @@ mod generic_marketplace {
 
         pub fn purchase_preview_mint(
             &mut self,
-            mut payment: Bucket,
-            account: Global<Account>,
+            payment: Bucket,
+            amount: u64,
+            fee: Bucket,
+            account: Option<Global<Account>>,
             preview_mint_address: Global<AnyComponent>,
         ) -> (Bucket, Vec<NonFungibleBucket>, Option<Bucket>) {
-            let fee_amount = payment.amount().checked_mul(self.mint_fee).unwrap();
+            let fee_expected = payment.amount() * self.mint_fee;
 
-            let fee =
-                payment.take_advanced(fee_amount, WithdrawStrategy::Rounded(RoundingMode::ToZero));
+            assert!(fee.amount() >= fee_expected);
 
             let fee_resource = fee.resource_address();
             let fee_vault_exists = self.fee_vaults.get(&fee_resource).is_some();
@@ -436,7 +437,7 @@ mod generic_marketplace {
             let receipt_and_change: (Bucket, Vec<NonFungibleBucket>, Option<Bucket>) =
                 preview_mint_address.call_raw::<(Bucket, Vec<NonFungibleBucket>, Option<Bucket>)>(
                     "mint_preview_nft",
-                    scrypto_args!(payment, account, proof_creation),
+                    scrypto_args!(payment, amount, account, proof_creation),
                 );
 
             receipt_and_change
