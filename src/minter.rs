@@ -267,6 +267,7 @@ mod royal_nft {
             setup_metadata: NFTMetadata,
             minting_config: MintingConfig,
             royalty_config_input: RoyaltyConfigInput,
+            dapp_deff: ComponentAddress,
         ) -> (Global<RoyalNFTs>, NonFungibleBucket, ResourceAddress) {
             let (nft_address_reservation, royalty_component_address) =
                 Runtime::allocate_component_address(RoyalNFTs::blueprint_id());
@@ -351,8 +352,11 @@ mod royal_nft {
                         || require_amount(1, internal_creator_admin.resource_address())
                         || require(nft_creator_admin.resource_address())
                 );
-                change_movement_restrictions_rule =
-                    rule!(require_amount(1, internal_creator_admin.resource_address()));
+                change_movement_restrictions_rule = rule!(
+                    require_amount(1, royalty_config_input.depositer_admin)
+                        || require_amount(1, internal_creator_admin.resource_address())
+                        || require(nft_creator_admin.resource_address())
+                );
             } else {
                 depositer_admin_rule = rule!(allow_all);
                 change_movement_restrictions_rule =
@@ -559,7 +563,7 @@ mod royal_nft {
                 init {
                     "name" => component_name.to_owned(), locked;
                     "description" => "An NFT minting and royalty component.".to_owned(), locked;
-                    "dapp_definition" => royalty_component_address, locked;
+                    "dapp_definition" => dapp_deff, locked;
                     "icon_url" => Url::of(setup_metadata.icon_url), locked;
                 }
             ))

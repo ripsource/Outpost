@@ -17,11 +17,11 @@ mod mint_factory {
 
 
     struct MintFactory {
-        
+        dapp_deff: ComponentAddress,
     }
 
     impl MintFactory {
-        pub fn start_mint_factory() -> (Global<MintFactory>, Bucket) {
+        pub fn start_mint_factory(dapp_definition: ComponentAddress) -> (Global<MintFactory>, Bucket) {
 
 
             let (address_reservation, component_address) =
@@ -50,7 +50,7 @@ mod mint_factory {
 
 (
             Self {
-               
+               dapp_deff: dapp_definition
                
             }
             .instantiate()
@@ -65,7 +65,7 @@ mod mint_factory {
                 init {
                     "name" => "OP Mint Factory".to_owned(), updatable;
                     "description" => "The mint factory for Outpost Collections".to_owned(), updatable;
-                    "dapp_definition" => component_address, updatable;
+                    "dapp_definition" => dapp_definition, updatable;
                     "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), updatable;
                 }
             ))
@@ -86,7 +86,8 @@ mod mint_factory {
             let fresh_mint: (Global<RoyalNFTs>, NonFungibleBucket, ResourceAddress) = RoyalNFTs::start_minting_nft(
                 setup_metadata,
                 minting_config,
-                royalty_config_input
+                royalty_config_input,
+                self.dapp_deff
                
             );
 
