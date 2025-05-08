@@ -11,6 +11,11 @@ pub fn trader_auth_key(
     let manifest = ManifestBuilder::new()
         .lock_fee_from_faucet()
         .call_method(trader_component, "fetch_auth_key", manifest_args!())
+        .call_method(
+            user.account,
+            "deposit_batch",
+            manifest_args!(ManifestExpression::EntireWorktop),
+        )
         .build();
 
     let receipt = test_runner.execute_manifest(

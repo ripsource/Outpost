@@ -37,17 +37,16 @@ fn list_and_purchase_bulk_royalty_nft() {
 
     println!("mint factory passed");
 
-    let royalty_config = defaults_royalty_config();
+    let royalty_config = defaults_royalty_config(depositer_badger);
 
-    let (royalty_nft_component, creator_key) = create_royalty_nft(
-        &mut test_runner,
-        &user,
-        mint_factory,
-        royalty_config,
-        depositer_badger.clone(),
-    );
+    let (royalty_nft_component, creator_key) =
+        create_royalty_nft(&mut test_runner, &user, mint_factory, royalty_config);
 
     println!("royalty nft passed");
+
+    let time: Instant = Instant {
+        seconds_since_unix_epoch: 0,
+    };
 
     enable_mint_reveal(
         &mut test_runner,
@@ -55,6 +54,9 @@ fn list_and_purchase_bulk_royalty_nft() {
         royalty_nft_component,
         creator_key,
         marketplace_key,
+        dec!(100),
+        1000u64,
+        time,
     );
     println!("enable mint reveal passed");
 
@@ -65,12 +67,14 @@ fn list_and_purchase_bulk_royalty_nft() {
     println!("nft address passed");
 
     for _ in 0..80 {
-        mint_royalty_nft(
+        purchase_preview_mint_via_marketplace(
             &mut test_runner,
             &user,
-            royalty_nft_component,
+            marketplace_component,
             nft_address.clone(),
+            1u64,
             minting_transient,
+            royalty_nft_component,
         );
     }
 

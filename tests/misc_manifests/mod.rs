@@ -42,7 +42,12 @@ pub fn instantiate_open_hub(
 ) -> ComponentAddress {
     let manifest = ManifestBuilder::new()
         .lock_fee_from_faucet()
-        .call_function(package, "OpenHub", "start_open_hub", manifest_args!())
+        .call_function(
+            package,
+            "OpenHub",
+            "start_open_hub",
+            manifest_args!(user.account),
+        )
         .call_method(
             user.account,
             "deposit_batch",
@@ -141,7 +146,7 @@ pub fn create_outpost(
     let (trader_key_resource, trader_key_local): (ResourceAddress, NonFungibleLocalId) =
         trader_key.clone().into_parts();
 
-    let trader_component = receipt.expect_commit(true).new_component_addresses()[0];
+    let trader_component = receipt.expect_commit(true).new_component_addresses()[1];
 
     (trader_key_resource, trader_key_local, trader_component)
 }
@@ -185,7 +190,7 @@ pub fn create_marketplace(
             package,
             "GenericMarketplace",
             "start_marketplace",
-            manifest_args!(fee, fee),
+            manifest_args!(fee, fee, user.account),
         )
         .call_method(
             user.account,
@@ -225,24 +230,76 @@ pub fn create_marketplace(
     (component, marketplace_key)
 }
 
-pub fn defaults_royalty_config() -> RoyaltyConfig {
-    let dapp_permissions: HashMap<ComponentAddress, ResourceAddress> = hashmap![];
-    let buyer_permissions: Vec<ComponentAddress> = vec![];
-    let currencies: Vec<ResourceAddress> = vec![];
-    let minimum_amounts: HashMap<ResourceAddress, Decimal> = hashmap!();
+#[derive(ScryptoSbor, ManifestEncode, ManifestDecode)]
+pub struct RoyaltyConfigInput {
+    pub depositer_admin: ResourceAddress,
+    pub royalties_enabled: bool,
+    pub royalty_percent: Decimal,
+    pub maximum_royalty_percent: Decimal,
+}
 
-    RoyaltyConfig {
+#[derive(ScryptoSbor, ManifestEncode, ManifestDecode)]
+pub struct NFTMetadata {
+    pub name: String,
+    pub description: String,
+    pub icon_url: String,
+    pub preview_image_url: String,
+}
+#[derive(ScryptoSbor, ManifestEncode, ManifestDecode)]
+pub struct MintingConfig {
+    pub mint_price: Decimal,
+    pub mint_currency: ResourceAddress,
+    pub initial_sale_cap: u64,
+    pub rules: NFTRules,
+}
+
+#[derive(ScryptoSbor, ManifestEncode, ManifestDecode)]
+pub struct NFTRules {
+    pub burnable: bool,
+    pub burn_locked: bool,
+    pub metadata_updatable: bool,
+    pub metadata_locked: bool,
+    pub royalty_config_locked: bool,
+}
+
+#[derive(ScryptoSbor, ManifestEncode, ManifestDecode)]
+pub struct RoyalConfig {
+    royaly_conig: RoyaltyConfigInput,
+    metadata: NFTMetadata,
+    minting_config: MintingConfig,
+}
+
+pub fn defaults_royalty_config(depositer_admin: ResourceAddress) -> RoyalConfig {
+    let royalty_config = RoyaltyConfigInput {
+        depositer_admin,
+        royalties_enabled: true,
         royalty_percent: Decimal::from_str("0.1").unwrap(),
         maximum_royalty_percent: Decimal::from_str("0.5").unwrap(),
-        limit_currencies: false,
-        permitted_currencies: currencies,
-        minimum_royalties: false,
-        minimum_royalty_amounts: minimum_amounts,
-        limit_dapps: false,
-        permissioned_dapps: dapp_permissions,
-        limit_buyers: false,
-        permissioned_buyers: buyer_permissions,
-        royalty_configuration_locked: false,
+    };
+
+    let metadata = NFTMetadata {
+        name: "Baked Potato NFTs".to_string(),
+        description: "An Baked Potato NFT collection you can trade with royalties".to_string(),
+        icon_url: "https://www.allrecipes.com/thmb/c_2gXiAwkO6u1UJCY-1eAVCy0h0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/54679_perfect-baked-potato-Rita-1x1-1-91711252bb3740088c8ea55c5f9bef1c.jpg".to_string(),
+        preview_image_url: "https://www.onceuponachef.com/images/2022/11/baked-potatoes.jpg".to_string(),
+    };
+
+    let minting_config = MintingConfig {
+        mint_price: dec!(100),
+        mint_currency: XRD,
+        initial_sale_cap: 1000u64,
+        rules: NFTRules {
+            burnable: false,
+            burn_locked: false,
+            metadata_updatable: true,
+            metadata_locked: false,
+            royalty_config_locked: false,
+        },
+    };
+    RoyalConfig {
+        royaly_conig: royalty_config,
+        metadata,
+        minting_config,
     }
 }
 
@@ -306,7 +363,7 @@ pub fn create_mint_factory(
             package,
             "MintFactory",
             "start_mint_factory",
-            manifest_args!(),
+            manifest_args!(user.account),
         )
         .call_method(
             user.account,
@@ -403,39 +460,17 @@ pub fn create_royalty_nft(
     test_runner: &mut DefaultLedgerSimulator,
     user: &User,
     mint_factory_component: ComponentAddress,
-    royalty_config: RoyaltyConfig,
-    depositer_badge: ResourceAddress,
+    royalty_config: RoyalConfig,
 ) -> (ComponentAddress, ResourceAddress) {
     let manifest = ManifestBuilder::new()
         .lock_fee_from_faucet()
         .call_method(
             mint_factory_component,
             "create_royal_nft",
-
             manifest_args!(
-                "Baked Potato NFTs".to_string(),
-                "An Baked Potato NFT collection you can trade with royalties".to_string(),
-                "https://www.allrecipes.com/thmb/c_2gXiAwkO6u1UJCY-1eAVCy0h0=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/54679_perfect-baked-potato-Rita-1x1-1-91711252bb3740088c8ea55c5f9bef1c.jpg".to_string(),
-                "https://www.onceuponachef.com/images/2022/11/baked-potatoes.jpg".to_string(),
-                dec!(100),
-                XRD,
-                1000u64,
-                vec![false, false, true, false, false],
-                depositer_badge,
-                true,
-                royalty_config.royalty_percent,
-                royalty_config.maximum_royalty_percent,
-                vec![
-                    royalty_config.limit_buyers,
-                    royalty_config.limit_currencies,
-                    royalty_config.limit_dapps,
-                    false,
-                    royalty_config.minimum_royalties,
-                ],
-                royalty_config.permissioned_dapps,
-                royalty_config.permissioned_buyers,
-                royalty_config.permitted_currencies,
-                royalty_config.minimum_royalty_amounts,
+                royalty_config.metadata,
+                royalty_config.minting_config,
+                royalty_config.royaly_conig,
             ),
         )
         .call_method(

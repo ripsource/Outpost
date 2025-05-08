@@ -153,6 +153,7 @@ mod generic_marketplace {
             account_recipient: Global<Account>,
         ) -> Vec<Bucket> {
             let nflid = NonFungibleLocalId::integer(1u64.into());
+
             let proof_creation: Proof = self
                 .marketplace_listing_key_vault
                 .as_non_fungible()
@@ -205,6 +206,7 @@ mod generic_marketplace {
                             self.fee_vaults.insert(fee_resource, fee_vault);
                         }
                     }
+
                     // Collect NFTs
                     all_nfts.push(result.0);
                     all_nfts.push(result.1);

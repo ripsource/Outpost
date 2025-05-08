@@ -22,7 +22,7 @@ fn list_and_purchase_multi_nft() {
 
     let depositer_badger = fetch_depositer_badge(&mut test_runner, &user, open_hub_component);
 
-    let (_trader_key_resource, _trader_key_local, trader_component) =
+    let (trader_key_resource, trader_key_local, trader_component) =
         create_outpost(&mut test_runner, &user, open_hub_component);
 
     create_event_listener(&mut test_runner, &user, package, virtual_badge.clone());
@@ -35,16 +35,21 @@ fn list_and_purchase_multi_nft() {
 
     println!("mint factory passed");
 
-    let royalty_config = blank_config();
+    let royalty_config = defaults_royalty_config(depositer_badger);
 
-    let (royalty_nft_component, creator_key) = create_custom_variant_nft(
-        &mut test_runner,
-        &user,
-        mint_factory,
-        royalty_config,
-        depositer_badger.clone(),
-        false,
-    );
+    let (royalty_nft_component, creator_key) =
+        create_royalty_nft(&mut test_runner, &user, mint_factory, royalty_config);
+
+    // let royalty_config = blank_config();
+
+    // let (royalty_nft_component, creator_key) = create_custom_variant_nft(
+    //     &mut test_runner,
+    //     &user,
+    //     mint_factory,
+    //     royalty_config,
+    //     depositer_badger.clone(),
+    //     false,
+    // );
 
     for i in 0..124 {
         direct_mint(
@@ -66,8 +71,8 @@ fn list_and_purchase_multi_nft() {
 
     println!("global id passed");
 
-    let (trader_auth_resource, trader_auth_local) =
-        trader_auth_key(&mut test_runner, &user, trader_component.clone());
+    // let (trader_auth_resource, trader_auth_local) =
+    //     trader_auth_key(&mut test_runner, &user, trader_component.clone());
 
     println!("trader auth passed");
 
@@ -85,8 +90,8 @@ fn list_and_purchase_multi_nft() {
         &user,
         listings,
         trader_component.clone(),
-        trader_auth_resource.clone(),
-        trader_auth_local.clone(),
+        trader_key_resource.clone(),
+        trader_key_local.clone(),
         nft_address.clone(),
         NonFungibleLocalId::integer(1),
         None,

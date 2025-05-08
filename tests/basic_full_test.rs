@@ -1,3 +1,4 @@
+use scrypto::runtime::Clock;
 use scrypto_test::prelude::*;
 mod common;
 mod creator_manifests;
@@ -22,7 +23,7 @@ fn list_and_purchase_royalty_nft() {
 
     let depositer_badger = fetch_depositer_badge(&mut test_runner, &user, open_hub_component);
 
-    let (_trader_key_resource, _trader_key_local, trader_component) =
+    let (trader_key_resource, trader_key_local, trader_component) =
         create_outpost(&mut test_runner, &user, open_hub_component);
 
     create_event_listener(&mut test_runner, &user, package, virtual_badge.clone());
@@ -35,17 +36,16 @@ fn list_and_purchase_royalty_nft() {
 
     println!("mint factory passed");
 
-    let royalty_config = defaults_royalty_config();
+    let royalty_config = defaults_royalty_config(depositer_badger);
 
-    let (royalty_nft_component, creator_key) = create_royalty_nft(
-        &mut test_runner,
-        &user,
-        mint_factory,
-        royalty_config,
-        depositer_badger.clone(),
-    );
+    let (royalty_nft_component, creator_key) =
+        create_royalty_nft(&mut test_runner, &user, mint_factory, royalty_config);
 
     println!("royalty nft passed");
+
+    let time: Instant = Instant {
+        seconds_since_unix_epoch: 0,
+    };
 
     enable_mint_reveal(
         &mut test_runner,
@@ -53,6 +53,9 @@ fn list_and_purchase_royalty_nft() {
         royalty_nft_component,
         creator_key,
         marketplace_key,
+        dec!(100),
+        1000u64,
+        time,
     );
     println!("enable mint reveal passed");
 
@@ -62,31 +65,26 @@ fn list_and_purchase_royalty_nft() {
 
     println!("nft address passed");
 
-    mint_royalty_nft(
+    purchase_preview_mint_via_marketplace(
         &mut test_runner,
         &user,
-        royalty_nft_component,
+        marketplace_component,
         nft_address.clone(),
+        1u64,
         minting_transient,
+        royalty_nft_component,
     );
 
     println!("mint royalty passed");
 
     let global_id = create_global_id(nft_address.clone(), 0);
 
-    println!("global id passed");
-
-    let (trader_auth_resource, trader_auth_local) =
-        trader_auth_key(&mut test_runner, &user, trader_component.clone());
-
-    println!("trader auth passed");
-
     list_royalty_nft(
         &mut test_runner,
         &user,
         trader_component.clone(),
-        trader_auth_resource.clone(),
-        trader_auth_local.clone(),
+        trader_key_resource.clone(),
+        trader_key_local.clone(),
         nft_address.clone(),
         NonFungibleLocalId::integer(0),
         dec!(100),

@@ -185,7 +185,7 @@ mod opentrader {
                     "name" => "Outpost Account".to_owned(), locked;
                     "description" => "An Outpost Account".to_owned(), locked;
                     "dapp_definition" => dapp_global, locked;
-                    "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
+                    "icon_url" => Url::of("https://www.outpost.trade/img/outpost_symbol.png"), locked;
                 }
             ))
             .roles(roles!(
@@ -260,33 +260,6 @@ mod opentrader {
                 bucket_local_ids.is_superset(&listing_local_ids),
                 "[multi_list] Not all listed NFTs are present in the provided bucket"
             );
-
-            // let outpost_account = self.trader_account_component_address;
-
-            // // Process each listing
-            // for (nfgid, price) in listings {
-            //     // Create the listing object
-            //     let new_listing = Listing {
-            //         secondary_seller_permissions: permissions.clone(),
-            //         currency,
-            //         price,
-            //         nfgid: nfgid.clone(),
-            //         outpost_account,
-            //     };
-
-            //     // Store the listing
-            //     self.listings.insert(nfgid.clone(), new_listing.clone());
-
-            // }
-
-            // Emit the listing event
-            // let emitter_proof = self
-            //     .emitter_badge
-            //     .as_non_fungible()
-            //     .create_proof_of_non_fungibles(&indexset![self.emitter_badge_local.clone()]);
-
-            // self.event_manager
-            //     .multi_listing_event(full_listings, emitter_proof.into());
 
             self.multi_listing_event(full_listings);
 
@@ -390,14 +363,6 @@ mod opentrader {
                 }
             });
 
-            // finally we emit a listing event via the event emitter component
-            // let emitter_proof = self
-            //     .emitter_badge
-            //     .as_non_fungible()
-            //     .create_proof_of_non_fungibles(&indexset![self.emitter_badge_local.clone()]);
-            // self.event_manager
-            //     .listing_event(new_listing, nfgid.clone(), emitter_proof.into());
-
             self.listing_event(new_listing, nfgid.clone());
         }
 
@@ -476,7 +441,7 @@ mod opentrader {
                 let nft_address = nfgids[0].resource_address();
                 // Process all NFTs
 
-                let local_id_index_set = nfgids
+                let local_id_index_set: indexmap::IndexSet<NonFungibleLocalId> = nfgids
                     .iter()
                     .map(|nfgid| nfgid.local_id().clone())
                     .collect();
@@ -520,7 +485,13 @@ mod opentrader {
                 let mut remainder_after_royalty: Bucket =
                     Global::<AnyComponent>::from(call_address).call_raw(
                         "pay_royalty",
-                        scrypto_args!(nft_address, payment, marketplace),
+                        scrypto_args!(
+                            nft_address,
+                            local_id_index_set,
+                            payment,
+                            marketplace,
+                            account_recipient
+                        ),
                     );
 
                 // we then take the marketplaces fee (we've already calculated this earlier based on the full payment amount).
@@ -750,7 +721,7 @@ mod opentrader {
                 // We also provide the trading permission to check against any other permissions the creator has set.
                 let mut remainder_after_royalty: Bucket =
                     Global::<AnyComponent>::from(call_address).call_raw(
-                        "pay_royalty",
+                        "pay_royalty_basic",
                         scrypto_args!(nft_address, payment, trading_permission),
                     );
 
@@ -786,13 +757,6 @@ mod opentrader {
             self.listings.remove(&nfgid);
 
             // finally we emit a listing event via the event emitter component
-            // let emitter_proof = self
-            //     .emitter_badge
-            //     .as_non_fungible()
-            //     .create_proof_of_non_fungibles(&indexset![self.emitter_badge_local.clone()]);
-
-            // self.event_manager
-            //     .purchase_listing_event(listing_event, nfgid, emitter_proof.into());
 
             self.purchase_listing_event(listing_event, nfgid);
 
@@ -868,17 +832,6 @@ mod opentrader {
                     .listings
                     .get(&nfgid.clone())
                     .expect("[change_price] Listing not found");
-
-                // let emitter_proof = self
-                //     .emitter_badge
-                //     .as_non_fungible()
-                //     .create_proof_of_non_fungibles(&indexset![self.emitter_badge_local.clone()]);
-
-                // self.event_manager.cancel_listing_event(
-                //     listing.clone(),
-                //     nfgid.clone(),
-                //     emitter_proof.into(),
-                // );
 
                 self.cancel_listing_event(listing.clone(), nfgid.clone());
             }
@@ -1037,33 +990,6 @@ mod opentrader {
                 "[multi_list] Not all listed NFTs are present in the provided bucket"
             );
 
-            // let outpost_account = self.trader_account_component_address;
-
-            // // Process each listing
-            // for (nfgid, price) in listings {
-            //     // Create the listing object
-            //     let new_listing = Listing {
-            //         secondary_seller_permissions: permissions.clone(),
-            //         currency,
-            //         price,
-            //         nfgid: nfgid.clone(),
-            //         outpost_account,
-            //     };
-
-            //     // Store the listing
-            //     self.listings.insert(nfgid.clone(), new_listing.clone());
-
-            // }
-
-            // Emit the listing event
-            // let emitter_proof = self
-            //     .emitter_badge
-            //     .as_non_fungible()
-            //     .create_proof_of_non_fungibles(&indexset![self.emitter_badge_local.clone()]);
-
-            // self.event_manager
-            //     .multi_listing_event(full_listings, emitter_proof.into());
-
             self.multi_listing_event(full_listings);
 
             let nft_address = items.resource_address();
@@ -1130,19 +1056,7 @@ mod opentrader {
                     .insert(nft_address.clone(), Vault::with_bucket(nft_bucket.into()));
             }
 
-            // self.nft_vaults
-            //     .insert(nfgid.clone(), Vault::with_bucket(nft_bucket.into()));
-
             self.listings.insert(nfgid.clone(), new_listing.clone());
-
-            // finally we emit a listing event via the event emitter component
-            // let emitter_proof = self
-            //     .emitter_badge
-            //     .as_non_fungible()
-            //     .create_proof_of_non_fungibles(&indexset![self.emitter_badge_local.clone()]);
-
-            // self.event_manager
-            //     .listing_event(new_listing, nfgid, emitter_proof.into());
 
             self.listing_event(new_listing, nfgid);
         }
@@ -1442,12 +1356,6 @@ mod opentrader {
                 self.account_locker
                     .store(self.my_account, payment.into(), true);
             });
-
-            // self.event_manager.purchase_listing_event(
-            //     listing_event,
-            //     nfgid.clone(),
-            //     emitter_proof.into(),
-            // );
 
             self.purchase_listing_event(listing_event, nfgid.clone());
 

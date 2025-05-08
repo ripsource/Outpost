@@ -1,3 +1,4 @@
+use outpost::minter::NFTData;
 use scrypto::prelude::*;
 use scrypto_test::prelude::*;
 
@@ -9,6 +10,9 @@ pub fn enable_mint_reveal(
     component: ComponentAddress,
     creator_key: ResourceAddress,
     marketplace_resource: ResourceAddress,
+    mint_price: Decimal,
+    initial_sale_cap: u64,
+    mint_start: Instant,
 ) {
     let creator_local_id: NonFungibleLocalId =
         NonFungibleLocalId::string("creator_key".to_string()).unwrap();
@@ -23,7 +27,12 @@ pub fn enable_mint_reveal(
         .call_method(
             component,
             "enable_mint_reveal",
-            manifest_args!(1000u64, vec![marketplace_resource]),
+            manifest_args!(
+                initial_sale_cap,
+                mint_start,
+                mint_price,
+                vec![marketplace_resource]
+            ),
         )
         .build();
 
@@ -35,11 +44,64 @@ pub fn enable_mint_reveal(
     receipt.expect_commit(true);
 }
 
+pub fn purchase_preview_mint_via_marketplace(
+    test_runner: &mut DefaultLedgerSimulator,
+    user: &User,
+    component: ComponentAddress,
+    nft_address: ResourceAddress,
+    amount: u64,
+    transient_address: ResourceAddress,
+    mint_component: ComponentAddress,
+) {
+    let price = dec!(100) * amount;
+    let fee = dec!(0.02) * price;
+
+    let manifest = ManifestBuilder::new()
+        .lock_fee_from_faucet()
+        .call_method(user.account, "withdraw", manifest_args!(XRD, price))
+        .take_all_from_worktop(XRD, "payment")
+        .call_method(user.account, "withdraw", manifest_args!(XRD, fee))
+        .take_all_from_worktop(XRD, "fee")
+        .with_name_lookup(|builder, lookup| {
+            builder.call_method(
+                component,
+                "purchase_preview_mint",
+                manifest_args!(
+                    lookup.bucket("payment"),
+                    amount,
+                    lookup.bucket("fee"),
+                    Some(user.account),
+                    mint_component
+                ),
+            )
+        })
+        .take_all_from_worktop(nft_address, "bucket1")
+        .call_method_with_name_lookup(user.account, "deposit", |lookup| {
+            manifest_args!(lookup.bucket("bucket1"))
+        })
+        .take_all_from_worktop(transient_address, "bucket2")
+        .call_method_with_name_lookup(mint_component, "cleared", |lookup| {
+            manifest_args!(lookup.bucket("bucket2"))
+        })
+        .call_method(
+            user.account,
+            "deposit_batch",
+            manifest_args!(ManifestExpression::EntireWorktop),
+        )
+        .build();
+    let receipt = test_runner.execute_manifest(
+        manifest,
+        vec![NonFungibleGlobalId::from_public_key(&user.pubkey)],
+    );
+    receipt.expect_commit(true);
+}
+
 pub fn mint_royalty_nft(
     test_runner: &mut DefaultLedgerSimulator,
     user: &User,
     component: ComponentAddress,
     nft_address: ResourceAddress,
+    amount: u64,
     transient_address: ResourceAddress,
 ) {
     let manifest = ManifestBuilder::new()
@@ -50,7 +112,7 @@ pub fn mint_royalty_nft(
             builder.call_method(
                 component,
                 "mint_preview_nft",
-                manifest_args!(lookup.bucket("payment"), user.account),
+                manifest_args!(lookup.bucket("payment"), amount, user.account,),
             )
         })
         .take_all_from_worktop(nft_address, "bucket1")
@@ -87,6 +149,15 @@ pub fn mint_royalty_nft(
 //     )>,
 // ) -> Vec<Bucket> {
 
+#[derive(ScryptoSbor, ManifestDecode, ManifestEncode, ManifestCategorize)]
+pub struct Other {
+    pub name: String,
+    pub description: String,
+    pub key_image_url: Url,
+    pub attributes: Vec<HashMap<String, String>>,
+    pub ipfs_uri: Option<String>,
+}
+
 pub fn direct_mint(
     test_runner: &mut DefaultLedgerSimulator,
     user: &User,
@@ -97,27 +168,39 @@ pub fn direct_mint(
     let creator_local_id: NonFungibleLocalId =
         NonFungibleLocalId::string("creator_key".to_string()).unwrap();
 
-    let data: Vec<(
-        NonFungibleLocalId,
-        (String, String, String, Vec<HashMap<String, String>>),
-    )> = vec![(
-        NonFungibleLocalId::integer(id.into()),
-        (
-            "name".to_string(),
-            "description".to_string(),
-            "https://i.scdn.co/image/ab67616d0000b2735d02af8588949bf7ee2f0a08".to_string(),
-            vec![HashMap::new()],
-        ),
-    )];
+    // #[derive(ScryptoSbor)]
+    // pub struct NFTData {
+    //     pub name: String,
+    //     pub description: String,
+    //     pub key_image_url: Url,
+    //     pub attributes: Vec<HashMap<String, String>>,
+    //     pub ipfs_uri: Option<String>,
+    // }
+
+    let data: Vec<Other> = vec![Other {
+        name: "name".to_string(),
+        description: "description".to_string(),
+        key_image_url: Url::of("https://i.scdn.co/image/ab67616d0000b2735d02af8588949bf7ee2f0a08"),
+        attributes: vec![HashMap::new()],
+        ipfs_uri: None,
+    }];
 
     let manifest = ManifestBuilder::new()
         .lock_fee_from_faucet()
         .call_method(
             user.account,
             "create_proof_of_non_fungibles",
+            manifest_args!(creator_key, vec![creator_local_id.clone()]),
+        )
+        .pop_from_auth_zone("creator_proof")
+        .call_method(
+            user.account,
+            "create_proof_of_non_fungibles",
             manifest_args!(creator_key, vec![creator_local_id]),
         )
-        .call_method(component, "direct_mint", manifest_args!(data))
+        .call_method_with_name_lookup(component, "direct_mint", |lookup| {
+            manifest_args!(lookup.proof("creator_proof"), Some(user.account), data)
+        })
         .call_method(
             user.account,
             "deposit_batch",

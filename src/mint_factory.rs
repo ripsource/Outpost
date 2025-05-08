@@ -24,7 +24,7 @@ mod mint_factory {
         pub fn start_mint_factory(dapp_definition: ComponentAddress) -> (Global<MintFactory>, Bucket) {
 
 
-            let (address_reservation, component_address) =
+            let (address_reservation, _component_address) =
                 Runtime::allocate_component_address(MintFactory::blueprint_id());
 
             // let global_caller_badge_rule = rule!(require(global_caller(component_address)));
@@ -40,7 +40,7 @@ mod mint_factory {
                 init {
                     "name" => "Mint Factory Admin".to_owned(), locked;
                     "description" => "Mint Factory Admin Badge".to_owned(), locked;
-                    "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
+                    "icon_url" => Url::of("https://www.outpost.trade/img/outpost_symbol.png"), locked;
                 }
               ))
                 .divisibility(0)
@@ -66,7 +66,7 @@ mod mint_factory {
                     "name" => "OP Mint Factory".to_owned(), updatable;
                     "description" => "The mint factory for Outpost Collections".to_owned(), updatable;
                     "dapp_definition" => dapp_definition, updatable;
-                    "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), updatable;
+                    "icon_url" => Url::of("https://www.outpost.trade/img/outpost_symbol.png"), updatable;
                 }
             ))
             .with_address(address_reservation)

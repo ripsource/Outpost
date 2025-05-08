@@ -247,6 +247,7 @@ mod royal_nft {
         add_to_allow_list => restrict_to: [admin];
         remove_from_allow_list => restrict_to: [admin];
         restrict_mint_list => restrict_to: [admin];
+        pay_royalty_basic => PUBLIC;
     }
     }
 
@@ -316,7 +317,7 @@ mod royal_nft {
                     init {
                         "name" => admin_name.to_owned(), locked;
                         "type" => "OP Creator Key".to_owned(), locked;
-                        "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
+                        "icon_url" => Url::of("https://www.outpost.trade/img/outpost_symbol.png"), locked;
                         "royalty_component" => royalty_component_address, locked;
                     }
                 })
@@ -418,8 +419,14 @@ mod royal_nft {
                 roles {
                     metadata_locker => creator_admin_rule.clone();
                     metadata_locker_updater => creator_admin_rule.clone();
-                    metadata_setter => creator_admin_rule.clone();
-                    metadata_setter_updater => creator_admin_rule.clone();
+                    metadata_setter => rule!(require_amount(
+                        dec!(1),
+                        nft_creator_admin.resource_address()
+                    ) || require_amount(1, internal_creator_admin.resource_address()));
+                    metadata_setter_updater => rule!(require_amount(
+                        dec!(1),
+                        nft_creator_admin.resource_address()
+                    ) || require_amount(1, internal_creator_admin.resource_address()));
                 },
                 init {
                     "name" => setup_metadata.name.to_owned(), updatable;
@@ -457,7 +464,7 @@ mod royal_nft {
                     init {
                         "name" => "Virtual Admin Minting Badge".to_owned(), locked;
                         "description" => "Virtual Admin Minting Badge".to_owned(), locked;
-                        "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
+                        "icon_url" => Url::of("https://www.outpost.trade/img/outpost_symbol.png"), locked;
                     }
                 })
                 .mint_roles(mint_roles! {
@@ -1091,6 +1098,103 @@ mod royal_nft {
         pub fn pay_royalty(
             &mut self,
             nft: ResourceAddress,
+            local_ids: indexmap::IndexSet<NonFungibleLocalId>,
+            mut payment: Bucket,
+            buyer: ResourceAddress,
+            account: Global<Account>,
+        ) -> Bucket {
+            let payment_amount = payment.amount();
+
+            // check the correct NFT for this royalty component has been passed
+            assert!(
+                nft == self.nft_manager.address(),
+                "[pay_royalty] Incorrect resource passed"
+            );
+
+            if self.royalty_config.limit_buyers {
+                assert!(
+                    self.royalty_config
+                        .permissioned_buyers
+                        .get(&buyer)
+                        .is_some(),
+                    "This buyer is not permissioned to trade this NFT"
+                );
+            }
+
+            let currency = payment.resource_address();
+            let limit_currencies = self.royalty_config.limit_currencies;
+
+            if limit_currencies {
+                assert!(
+                    self.royalty_config
+                        .permitted_currencies
+                        .get(&currency)
+                        .is_some(),
+                    "This currency is not permitted for royalties"
+                );
+            }
+
+            // send the royalty to the royalty vault
+
+            let vault_exists = self.royalty_vaults.get(&currency).is_some();
+
+            if !vault_exists {
+                // check the correct amount has been passed
+                let royalty = payment.take_advanced(
+                    payment_amount
+                        .checked_mul(self.royalty_config.royalty_percent)
+                        .unwrap(),
+                    WithdrawStrategy::Rounded(RoundingMode::ToZero),
+                );
+
+                if limit_currencies {
+                    if self.royalty_config.minimum_royalties {
+                        let minimum_royalty = self
+                            .royalty_config
+                            .minimum_royalty_amounts
+                            .get(&currency)
+                            .unwrap();
+                        assert!(
+                            royalty.amount() >= minimum_royalty.clone(),
+                            "Royalty amount is below the minimum required"
+                        );
+                    }
+                }
+
+                self.royalty_vaults
+                    .insert(currency.clone(), Vault::with_bucket(royalty));
+            } else {
+                // check the correct amount has been passed
+                let royalty = payment.take_advanced(
+                    payment_amount
+                        .checked_mul(self.royalty_config.royalty_percent)
+                        .unwrap(),
+                    WithdrawStrategy::Rounded(RoundingMode::ToZero),
+                );
+
+                if limit_currencies {
+                    if self.royalty_config.minimum_royalties {
+                        let minimum_royalty = self
+                            .royalty_config
+                            .minimum_royalty_amounts
+                            .get(&currency)
+                            .unwrap();
+                        assert!(
+                            royalty.amount() >= minimum_royalty.clone(),
+                            "Royalty amount is below the minimum required"
+                        );
+                    }
+                }
+                self.royalty_vaults.get_mut(&currency).unwrap().put(royalty);
+            }
+
+            // payment minus royalty returned to the trading account that called this method
+            payment
+        }
+
+        pub fn pay_royalty_basic(
+            &mut self,
+            nft: ResourceAddress,
             mut payment: Bucket,
             buyer: ResourceAddress,
         ) -> Bucket {
@@ -1484,79 +1588,3 @@ mod royal_nft {
         }
     }
 }
-
-// #[derive(ScryptoSbor)]
-// pub enum RoyaltyAction {
-//     SetRoyaltyPercent(Decimal),
-//     SetMaxRoyaltyPercent(Decimal),
-//     EnableCurrencyRestrictions(bool),
-//     AddPermittedCurrency(ResourceAddress),
-//     RemovePermittedCurrency(ResourceAddress),
-//     EnableMinimumRoyalties(bool),
-//     SetMinimumRoyalty(ResourceAddress, Decimal),
-//     RemoveMinimumRoyalty(ResourceAddress),
-// }
-
-// #[derive(ScryptoSbor)]
-// pub enum PermissionAction {
-//     EnableDappLimits(bool),
-//     AddDapp(ComponentAddress, ResourceAddress),
-//     RemoveDapp(ComponentAddress),
-//     EnableBuyerLimits(bool),
-//     AddBuyer(ResourceAddress),
-//     RemoveBuyer(ResourceAddress),
-// }
-
-// impl RoyalNFTs {
-//     pub fn update_royalty_config(&mut self, action: RoyaltyAction) {
-//         if self.royalty_config.royalty_configuration_locked {
-//             // Only allow specific actions when locked
-//             match action {
-//                 RoyaltyAction::SetMaxRoyaltyPercent(new_max) if new_max < self.royalty_config.maximum_royalty_percent => {
-//                     self.royalty_config.maximum_royalty_percent = new_max;
-//                 },
-//                 RoyaltyAction::EnableCurrencyRestrictions(false) => {
-//                     self.royalty_config.limit_currencies = false;
-//                 },
-//                 RoyaltyAction::AddPermittedCurrency(currency) if self.royalty_config.limit_currencies => {
-//                     self.royalty_config.permitted_currencies.insert(currency, ());
-//                 },
-//                 _ => panic!("Action not allowed when config is locked")
-//             }
-//             return;
-//         }
-
-//         // Handle all actions when not locked
-//         match action {
-//             RoyaltyAction::SetRoyaltyPercent(percent) => {
-//                 assert!(percent <= self.royalty_config.maximum_royalty_percent);
-//                 self.royalty_config.royalty_percent = percent;
-//             },
-//             // ... other matches for each action
-//         }
-//     }
-
-//     pub fn update_permissions(&mut self, action: PermissionAction) {
-//         if self.royalty_config.royalty_configuration_locked {
-//             // Only allow specific actions when locked
-//             match action {
-//                 PermissionAction::AddDapp(dapp, badge) => {
-//                     self.royalty_config.permissioned_dapps.insert(dapp, badge);
-//                 },
-//                 PermissionAction::AddBuyer(buyer) => {
-//                     self.royalty_config.permissioned_buyers.insert(buyer, ());
-//                 },
-//                 _ => panic!("Action not allowed when config is locked")
-//             }
-//             return;
-//         }
-
-//         // Handle all actions when not locked
-//         match action {
-//             PermissionAction::EnableDappLimits(enable) => {
-//                 self.royalty_config.limit_dapps = enable;
-//             },
-//             // ... other matches for each action
-//         }
-//     }
-// }

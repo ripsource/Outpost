@@ -72,7 +72,7 @@ mod openhub {
                 init {
                     "name" => "Outpost Admin".to_owned(), locked;
                     "description" => "Outpost Admin Badge".to_owned(), locked;
-                    "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
+                    "icon_url" => Url::of("https://www.outpost.trade/img/outpost_symbol.png"), locked;
                 }
               ))
                 .divisibility(0)
@@ -82,26 +82,27 @@ mod openhub {
 
             let admin_rule = rule!(require(open_hub_admin.resource_address()));
 
-            let emitter_trader_badge =
-                ResourceBuilder::new_ruid_non_fungible::<EmitterKey>(OwnerRole::None)
-                .metadata(metadata!(
-                    roles {
-                      metadata_setter => rule!(deny_all);
-                      metadata_setter_updater => rule!(deny_all);
-                      metadata_locker => rule!(deny_all);
-                      metadata_locker_updater => rule!(deny_all);
-                    },
-                    init {
-                        "name" => "Outpost Internal Services".to_owned(), locked;
-                        "description" => "Outpost Internal Services".to_owned(), locked;
-                        "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
-                    }
-                  ))
-                    .mint_roles(mint_roles! {
-                        minter => global_caller_badge_rule.clone();
-                        minter_updater => admin_rule.clone();
-                    })
-                    .create_with_no_initial_supply();
+            let emitter_trader_badge = ResourceBuilder::new_ruid_non_fungible::<EmitterKey>(
+                OwnerRole::None,
+            )
+            .metadata(metadata!(
+              roles {
+                metadata_setter => rule!(deny_all);
+                metadata_setter_updater => rule!(deny_all);
+                metadata_locker => rule!(deny_all);
+                metadata_locker_updater => rule!(deny_all);
+              },
+              init {
+                  "name" => "Outpost Internal Services".to_owned(), locked;
+                  "description" => "Outpost Internal Services".to_owned(), locked;
+                  "icon_url" => Url::of("https://www.outpost.trade/img/outpost_symbol.png"), locked;
+              }
+            ))
+            .mint_roles(mint_roles! {
+                minter => global_caller_badge_rule.clone();
+                minter_updater => admin_rule.clone();
+            })
+            .create_with_no_initial_supply();
 
             let outpost_account_badge =
                 ResourceBuilder::new_ruid_non_fungible::<TraderKey>(OwnerRole::None)
@@ -115,7 +116,7 @@ mod openhub {
                     init {
                         "name" => "Outpost Key".to_owned(), locked;
                         "description" => "The key to managing your listings at your outpost".to_owned(), locked;
-                        "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
+                        "icon_url" => Url::of("https://www.outpost.trade/img/outpost_symbol.png"), locked;
                     }
                   ))
                     .mint_roles(mint_roles! {
@@ -143,7 +144,7 @@ mod openhub {
                 init {
                     "name" => "Royalty Internal Services".to_owned(), locked;
                     "description" => "Royalty control for outpost internal services".to_owned(), locked;
-                    "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
+                    "icon_url" => Url::of("https://www.outpost.trade/img/outpost_symbol.png"), locked;
                 }
               ))
                 .mint_roles(mint_roles! {
@@ -164,7 +165,7 @@ mod openhub {
                 init {
                     "name" => "Internal transient badge".to_owned(), locked;
                     "description" => "Internal transient badge".to_owned(), locked;
-                    "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), locked;
+                    "icon_url" => Url::of("https://www.outpost.trade/img/outpost_symbol.png"), locked;
                 }
               ))
                 .divisibility(0)
@@ -215,7 +216,7 @@ mod openhub {
                     "name" => "Outpost Hub".to_owned(), updatable;
                     "description" => "Outpost Hub".to_owned(), updatable;
                     "dapp_definition" => dapp_defintion, updatable;
-                    "icon_url" => Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"), updatable;
+                    "icon_url" => Url::of("https://www.outpost.trade/img/outpost_symbol.png"), updatable;
                 }
             ))
             .with_address(address_reservation)
@@ -250,10 +251,10 @@ mod openhub {
                 "description",
                 "An extension of your account for managing your NFTs across Radix".to_string(),
             );
-            dapp_def_account.set_metadata("info_url", Url::of("https://outpostdocs.netlify.app/"));
+            dapp_def_account.set_metadata("info_url", Url::of("https://www.outpost.trade/"));
             dapp_def_account.set_metadata(
                 "icon_url",
-                Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"),
+                Url::of("https://www.outpost.trade/img/outpost_symbol.png"),
             );
 
             let dapp_def_address = GlobalAddress::from(dapp_def_account.address());
@@ -271,7 +272,7 @@ mod openhub {
                 .mint_ruid_non_fungible(TraderKey {
                     name: "Outpost Key".to_string(),
                     description: "Your key for listing and managing your NFTs across marketplaces and with other users.".to_string(),
-                    key_image_url: Url::of("https://outpostdocs.netlify.app/img/outpost_symbol.png"),
+                    key_image_url: Url::of("https://www.outpost.trade/img/outpost_symbol.png"),
                     hub: hub_address,
                 });
 
