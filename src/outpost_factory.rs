@@ -285,7 +285,7 @@ mod openhub {
 
             let transient_token = self.transient_token_manager.mint(1);
 
-            // Instatiation of a trading account via the outpost_account blueprint, passing in badges that will be locked in the accounts.
+            // Instantiation of a trading account via the outpost_account blueprint, passing in badges that will be locked in the accounts.
             let new_hub_component = OpenTrader::create_trader(
                 nfgid.clone(),
                 my_account,

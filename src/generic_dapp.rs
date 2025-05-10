@@ -46,7 +46,7 @@ mod generic_dapp {
         ) -> Vec<Bucket> {
             // withdraw the NFT from your dapp
             // There's no restrictions on withdraws - however you would need to pass this method to a deposit method on the nft collection
-            // to permitt the deposit.
+            // to permit the deposit.
 
             let vault = self.vaults.get_mut(&resource_address);
 
