@@ -145,6 +145,7 @@ pub struct NFTRules {
 pub struct RoyaltyConfigInput {
     pub depositer_admin: ResourceAddress,
     pub royalties_enabled: bool,
+    pub royalties_optional: bool,
     pub royalty_percent: Decimal,
     pub maximum_royalty_percent: Decimal,
 }
@@ -348,16 +349,22 @@ mod royal_nft {
             let change_movement_restrictions_rule: AccessRule;
 
             if royalty_config_input.royalties_enabled {
-                depositer_admin_rule = rule!(
-                    require_amount(1, royalty_config_input.depositer_admin)
-                        || require_amount(1, internal_creator_admin.resource_address())
-                        || require(nft_creator_admin.resource_address())
-                );
-                change_movement_restrictions_rule = rule!(
-                    require_amount(1, royalty_config_input.depositer_admin)
-                        || require_amount(1, internal_creator_admin.resource_address())
-                        || require(nft_creator_admin.resource_address())
-                );
+                if royalty_config_input.royalties_optional {
+                    depositer_admin_rule = rule!(allow_all);
+                    change_movement_restrictions_rule =
+                        rule!(require(nft_creator_admin.resource_address()));
+                } else {
+                    depositer_admin_rule = rule!(
+                        require_amount(1, royalty_config_input.depositer_admin)
+                            || require_amount(1, internal_creator_admin.resource_address())
+                            || require(nft_creator_admin.resource_address())
+                    );
+                    change_movement_restrictions_rule = rule!(
+                        require_amount(1, royalty_config_input.depositer_admin)
+                            || require_amount(1, internal_creator_admin.resource_address())
+                            || require(nft_creator_admin.resource_address())
+                    );
+                }
             } else {
                 depositer_admin_rule = rule!(allow_all);
                 change_movement_restrictions_rule =
@@ -1317,10 +1324,8 @@ mod royal_nft {
             let optional_returned_buckets =
                 call_address.call_raw::<Option<Vec<Bucket>>>(manfiest_method, scrypto_args!(nft));
 
-            self.nft_manager.set_depositable(rule!(
-                require_amount(1, self.admin_config.depositer_admin)
-                    || require(global_caller(self.royalty_component))
-            ));
+            self.nft_manager
+                .set_depositable(self.admin_config.depositer_rule.clone());
 
             optional_returned_buckets
         }

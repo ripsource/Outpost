@@ -90,10 +90,10 @@ mod generic_marketplace {
                     ));
                 },
                 init {
-                    "name" => "Trove".to_owned(), locked;
-                    "description" => "Trove Aggregator".to_owned(), locked;
+                    "name" => "Trove".to_owned(), updatable;
+                    "description" => "Trove Aggregator".to_owned(), updatable;
                     "dapp_definition" => dapp_definition, updatable;
-                    "icon_url" => Url::of("https://trove.tools/trove%20square.png"), locked;
+                    "icon_url" => Url::of("https://trove.tools/trove%20square.png"), updatable;
                 }
             ))
             .with_address(marketplace_address_reservation)
@@ -407,7 +407,7 @@ mod generic_marketplace {
             fee_and_nft.0
         }
 
-        pub fn purchase_preview_mint(
+        pub fn purchase_preview_mint_v2(
             &mut self,
             payment: Bucket,
             amount: u64,
@@ -448,5 +448,113 @@ mod generic_marketplace {
         pub fn get_marketplace_key_address(&self) -> ResourceAddress {
             self.marketplace_listing_key_vault.resource_address()
         }
+
+        pub fn purchase_preview_mint(
+            &mut self,
+            mut total_payment: Bucket, // User's total payment for minting and marketplace fees
+            cost_per_item_from_minter: Decimal, // The price of one NFT item as set by the minter component
+            quantity_to_mint: u64,    // Number of NFTs the user wants to mint
+            user_account_recipient: Option<Global<Account>>, // Account to receive NFTs and transient token
+            preview_mint_address: Global<AnyComponent>, // The minter component
+        ) -> (Bucket, Vec<NonFungibleBucket>, Option<Bucket>) { // Returns: (total_change_to_user, nfts_minted, optional_transient_token)
+            assert!(self.mint_fee >= Decimal::ZERO, "[purchase_preview_mint] Marketplace mint_fee rate must be non-negative.");
+            assert!(cost_per_item_from_minter >= Decimal::ZERO, "[purchase_preview_mint] cost_per_item_from_minter must be non-negative.");
+            assert!(quantity_to_mint > 0, "[purchase_preview_mint] quantity_to_mint must be greater than zero.");
+
+            // 1. Calculate the total cost due to the minter for the requested quantity.
+            // This is the amount the minter component expects to receive for the items.
+            let payment_due_to_minter_decimal = cost_per_item_from_minter
+                .checked_mul(Decimal::from(quantity_to_mint))
+                .unwrap_or_else(|| panic!("[purchase_preview_mint] Overflow calculating payment due to minter. Cost: {}, Quantity: {}", cost_per_item_from_minter, quantity_to_mint));
+
+            // 2. Calculate the marketplace fee. This fee is a percentage of the payment_due_to_minter_decimal.
+            let marketplace_fee_on_minter_payment_decimal = payment_due_to_minter_decimal
+                .checked_mul(self.mint_fee) // self.mint_fee is the rate, e.g., Decimal("0.01") for 1%
+                .unwrap_or_else(|| panic!("[purchase_preview_mint] Overflow calculating marketplace fee. Minter Payment: {}, Fee Rate: {}", payment_due_to_minter_decimal, self.mint_fee));
+
+            // Round the marketplace fee to a takeable Decimal value (e.g., 18 decimal places).
+            // RoundingMode::ToNearestMidpointAwayFromZero is a common financial rounding method.
+            let marketplace_fee_to_take_decimal = marketplace_fee_on_minter_payment_decimal
+                .checked_round(18, RoundingMode::ToNearestMidpointAwayFromZero).unwrap();
+
+            // 3. Calculate the total amount required by the protocol (minter + marketplace).
+            let total_required_by_protocol_decimal = payment_due_to_minter_decimal
+                .checked_add(marketplace_fee_to_take_decimal)
+                .unwrap_or_else(|| panic!("[purchase_preview_mint] Overflow calculating total required by protocol. Minter Payment: {}, Fee: {}", payment_due_to_minter_decimal, marketplace_fee_to_take_decimal));
+
+            // 4. Assert that the user's total payment is sufficient.
+            assert!(
+                total_payment.amount() >= total_required_by_protocol_decimal,
+                "[purchase_preview_mint] Insufficient total payment. Required: {}, Provided: {}",
+                total_required_by_protocol_decimal, total_payment.amount()
+            );
+
+            // 5. Take the payment intended for the minter from the total_payment.
+            // WithdrawStrategy::Rounded(RoundingMode::ToZero) will take at most the specified amount,
+            // rounding down if the bucket's divisibility requires it (unlikely for standard fungibles like XRD).
+            let payment_for_minter_bucket = total_payment.take_advanced(
+                payment_due_to_minter_decimal,
+                WithdrawStrategy::Rounded(RoundingMode::ToZero),
+            );
+            
+            // Sanity check: ensure we actually took what was expected for the minter.
+            // This is crucial for the minter to receive the correct amount.
+            assert_eq!(payment_for_minter_bucket.amount(), payment_due_to_minter_decimal, 
+                       "[purchase_preview_mint] Mismatch in amount taken for minter. Expected {}, Got {}. This could indicate an issue with total_payment or take_advanced behavior.", 
+                       payment_due_to_minter_decimal, payment_for_minter_bucket.amount());
+
+            // 6. Take the marketplace fee from the *remaining* total_payment.
+            if marketplace_fee_to_take_decimal > Decimal::ZERO {
+                let fee_bucket_for_storage = total_payment.take_advanced(
+                    marketplace_fee_to_take_decimal,
+                    WithdrawStrategy::Rounded(RoundingMode::ToZero),
+                );
+                // Sanity check for fee taken
+                assert_eq!(fee_bucket_for_storage.amount(), marketplace_fee_to_take_decimal,
+                           "[purchase_preview_mint] Mismatch in marketplace fee taken. Expected {}, Got {}",
+                           marketplace_fee_to_take_decimal, fee_bucket_for_storage.amount());
+
+                // Store the collected fee.
+                let fee_resource = fee_bucket_for_storage.resource_address();
+                let fee_vault_exists = self.fee_vaults.get(&fee_resource).is_some();
+                if fee_vault_exists {
+                    let mut vault = self.fee_vaults.get_mut(&fee_resource).unwrap();
+                    vault.put(fee_bucket_for_storage);
+                } else {
+                    let new_fee_vault = Vault::with_bucket(fee_bucket_for_storage);
+                    self.fee_vaults.insert(fee_resource, new_fee_vault);
+                }
+            }
+            
+           
+
+            // 8. Create the marketplace permission proof (e.g., using a marketplace-specific key).
+            let nflid = NonFungibleLocalId::integer(1u64.into()); // Example ID for marketplace key
+            let marketplace_permission_proof: Proof = self
+                .marketplace_listing_key_vault // Assuming this vault holds the marketplace's authorization keys
+                .as_non_fungible()
+                .create_proof_of_non_fungibles(&indexset![nflid])
+                .into();
+
+            // 9. Call the minter component's "mint_preview_nft" method.
+            // The minter expects: (payment_for_items, quantity_to_mint, user_account_if_any, marketplace_permission_proof)
+            // The minter returns: (change_from_minter, Vec<NonFungibleBucket_nfts>, Option<Bucket_transient_token>)
+            let (mut change_from_minter_bucket, minted_nfts_vec, transient_token_opt_bucket) =
+                preview_mint_address.call_raw::<(Bucket, Vec<NonFungibleBucket>, Option<Bucket>)>(
+                    "mint_preview_nft", 
+                    scrypto_args!(payment_for_minter_bucket, quantity_to_mint, user_account_recipient, marketplace_permission_proof),
+                );
+
+                change_from_minter_bucket.put(total_payment);
+
+            // If user_change_from_marketplace_bucket was zero, then change_from_minter_bucket (whether zero or not) is the correct total change.
+
+            // Return the combined change, the minted NFTs, and the optional transient token.
+            (change_from_minter_bucket, minted_nfts_vec, transient_token_opt_bucket)
+        }
+
+
+
     }
+
 }

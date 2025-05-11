@@ -111,20 +111,7 @@ fn list_and_purchase_bulk_royalty_nft() {
         vec![marketplace_key.clone()],
     );
 
-    // for i in 0..100 {
-    //     list_royalty_nft(
-    //         &mut test_runner,
-    //         &user,
-    //         trader_component.clone(),
-    //         trader_auth_resource.clone(),
-    //         trader_auth_local.clone(),
-    //         nft_address.clone(),
-    //         NonFungibleLocalId::integer(i as u64),
-    //         dec!(10),
-    //         None,
-    //         vec![marketplace_key.clone()],
-    //     );
-    // }
+   
 
     println!("list royalty passed");
 
@@ -147,11 +134,7 @@ fn list_and_purchase_bulk_royalty_nft() {
         ));
     }
 
-    // orders.push((
-    //     trader_component.clone(),
-    //     create_global_id(nft_address.clone(), 1),
-    //     dec!(10),
-    // ));
+  
 
     purchase_multi_royalty_nft(
         &mut test_runner,

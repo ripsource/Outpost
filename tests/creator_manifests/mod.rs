@@ -49,31 +49,44 @@ pub fn purchase_preview_mint_via_marketplace(
     user: &User,
     component: ComponentAddress,
     nft_address: ResourceAddress,
+    cost_per_item: Decimal,
     amount: u64,
     transient_address: ResourceAddress,
     mint_component: ComponentAddress,
 ) {
-    let price = dec!(100) * amount;
+    let price = cost_per_item * amount;
     let fee = dec!(0.02) * price;
+
+    let total_withdraw = price + fee;
 
     let manifest = ManifestBuilder::new()
         .lock_fee_from_faucet()
-        .call_method(user.account, "withdraw", manifest_args!(XRD, price))
+        .call_method(
+            user.account,
+            "withdraw",
+            manifest_args!(XRD, total_withdraw),
+        )
         .take_all_from_worktop(XRD, "payment")
-        .call_method(user.account, "withdraw", manifest_args!(XRD, fee))
-        .take_all_from_worktop(XRD, "fee")
         .with_name_lookup(|builder, lookup| {
             builder.call_method(
                 component,
                 "purchase_preview_mint",
                 manifest_args!(
                     lookup.bucket("payment"),
+                    cost_per_item,
                     amount,
-                    lookup.bucket("fee"),
                     Some(user.account),
                     mint_component
                 ),
             )
+
+            // pub fn purchase_preview_mint(
+            //     &mut self,
+            //     mut total_payment: Bucket, // User's total payment for minting and marketplace fees
+            //     cost_per_item_from_minter: Decimal, // The price of one NFT item as set by the minter component
+            //     quantity_to_mint: u64,    // Number of NFTs the user wants to mint
+            //     user_account_recipient: Option<Global<Account>>, // Account to receive NFTs and transient token
+            //     preview_mint_address: Global<AnyComponent>, // The minter component
         })
         .take_all_from_worktop(nft_address, "bucket1")
         .call_method_with_name_lookup(user.account, "deposit", |lookup| {

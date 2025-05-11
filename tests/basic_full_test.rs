@@ -53,7 +53,7 @@ fn list_and_purchase_royalty_nft() {
         royalty_nft_component,
         creator_key,
         marketplace_key,
-        dec!(100),
+        dec!(100.2389272937),
         1000u64,
         time,
     );
@@ -70,7 +70,8 @@ fn list_and_purchase_royalty_nft() {
         &user,
         marketplace_component,
         nft_address.clone(),
-        1u64,
+        dec!(100.2389272937),
+        3u64,
         minting_transient,
         royalty_nft_component,
     );

@@ -7,7 +7,7 @@ use scrypto::prelude::*;
 /// by providing authentication to the deposit rules on an Royalty NFT.
 ///
 ///
-/// Currently AccountLockers are not used - however the ambition would be to add them so that a user does not have to claim their revenue manually.
+/// Account lockers are used to store sales revenue, while first attempting to deposit directly to an account.
 
 #[derive(ScryptoSbor, Clone)]
 pub struct Listing {
@@ -27,7 +27,6 @@ pub struct Listing {
 
 type Unit = ();
 
-// To Do: register types for the Listing struct and in other blueprints
 #[blueprint]
 #[types(Listing, ResourceAddress, NonFungibleGlobalId, Vault, Hash, Unit)]
 #[events(ListingCreated, ListingUpdated, ListingCanceled, ListingPurchased)]
@@ -284,12 +283,12 @@ mod opentrader {
         /// Lists an NFT for sale by the user. The user provides the NFT, the price, the currency,
         /// and the ResourceAddress of a badge that a secondary seller must have to sell the NFT.
         /// We don't issue badges to Marketplaces, we just assume they have a badge that a user can easily select to mean
-        /// they want to list on their marketplace. In reality, a user will likley just check a box for Trove, Foton and Radland, etc.
+        /// they want to list on their marketplace. In reality, a user will likley just check a box for Trove, Foton and XRDegen, etc.
         /// and doesn't need to know the badge address.
         pub fn royal_list(
             &mut self,
             // The NFT to list for sale
-            nft_to_list: Bucket,
+            nft_to_list: NonFungibleBucket,
             // The price of the NFT - this price will be subject to marketplace fees and creator royalties which are taken as a % of this amount.
             price: Decimal,
             // The currency the NFT is listed in
@@ -300,8 +299,7 @@ mod opentrader {
             // The badge that is used to authenticate the user listing the NFT
             // trader_badge: Proof,
         ) {
-            // authenticate user
-            // self.check_creator(trader_badge);
+            // authenticate user happens at a system level
 
             assert!(
                 price > Decimal::zero(),
@@ -317,7 +315,7 @@ mod opentrader {
 
             let nft_address = nft_to_list.resource_address();
 
-            let id = nft_to_list.as_non_fungible().non_fungible_local_id();
+            let id = nft_to_list.non_fungible_local_id();
 
             let nfgid = NonFungibleGlobalId::new(nft_address.clone(), id.clone());
 
@@ -356,10 +354,10 @@ mod opentrader {
                         .nft_vaults
                         .get_mut(&nft_address.clone())
                         .expect("[royal_list] NFT not found");
-                    vault.put(nft_to_list);
+                    vault.put(nft_to_list.into());
                 } else {
                     self.nft_vaults
-                        .insert(nft_address, Vault::with_bucket(nft_to_list));
+                        .insert(nft_address, Vault::with_bucket(nft_to_list.into()));
                 }
             });
 
