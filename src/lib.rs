@@ -6,3 +6,4 @@ pub mod minter;
 pub mod outpost_account;
 pub mod outpost_event;
 pub mod outpost_factory;
+pub mod royalty_standalone_component;

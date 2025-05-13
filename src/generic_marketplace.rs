@@ -15,7 +15,7 @@ mod generic_marketplace {
     struct GenericMarketplace {
         marketplace_listing_key_vault: Vault,
         marketplace_key_manager: ResourceManager,
-        marketplace_admin: NonFungibleResourceManager,
+        marketplace_admin: ResourceAddress,
         marketplace_fee: Decimal,
         fee_vaults: KeyValueStore<ResourceAddress, Vault>,
         mint_fee: Decimal,
@@ -26,25 +26,21 @@ mod generic_marketplace {
             marketplace_fee: Decimal,
             mint_fee: Decimal,
             dapp_definition: ComponentAddress,
-        ) -> (Global<GenericMarketplace>, Bucket) {
+            admin_key: ResourceAddress,
+        ) -> Global<GenericMarketplace> {
             let (marketplace_address_reservation, marketplace_component_address) =
                 Runtime::allocate_component_address(GenericMarketplace::blueprint_id());
 
             let global_caller_badge_rule =
                 rule!(require(global_caller(marketplace_component_address)));
 
-            let admin_key = ResourceBuilder::new_integer_non_fungible_with_registered_type::<
-                AdminKey,
-            >(OwnerRole::None)
-            .mint_initial_supply([(1u64.into(), AdminKey {})]);
-
             let marketplace_listing_key =
                 ResourceBuilder::new_integer_non_fungible_with_registered_type::<
                     MarketPlacePermission,
-                >(OwnerRole::None)
+                >(OwnerRole::Fixed(rule!(require(admin_key))))
                 .mint_roles(mint_roles! {
-                    minter => global_caller_badge_rule;
-                    minter_updater => rule!(deny_all);
+                    minter => rule!(require(admin_key));
+                    minter_updater => rule!(require(admin_key));
                 })
                 .metadata(metadata! {
                     init {
@@ -55,7 +51,7 @@ mod generic_marketplace {
                 .mint_initial_supply([(
                     1u64.into(),
                     MarketPlacePermission {
-                        name: "Generic Marketplace".to_string(),
+                        name: "Trove".to_string(),
                     },
                 )]);
 
@@ -65,28 +61,26 @@ mod generic_marketplace {
             let component_address = Self {
                 marketplace_listing_key_vault: Vault::with_bucket(marketplace_listing_key.into()),
                 marketplace_key_manager: key_manager,
-                marketplace_admin: admin_key.resource_manager(),
+                marketplace_admin: admin_key,
                 marketplace_fee,
                 fee_vaults: KeyValueStore::<ResourceAddress, Vault>::new_with_registered_type(),
                 mint_fee,
             }
             .instantiate()
-            .prepare_to_globalize(OwnerRole::Fixed(rule!(require(
-                admin_key.resource_address()
-            ))))
+            .prepare_to_globalize(OwnerRole::Fixed(rule!(require(admin_key))))
             .metadata(metadata! (
                 roles {
                     metadata_setter => rule!(require(
-                        admin_key.resource_address()
+                        admin_key
                     ));
                     metadata_setter_updater => rule!(require(
-                        admin_key.resource_address()
+                        admin_key
                     ));
                     metadata_locker => rule!(require(
-                        admin_key.resource_address()
+                        admin_key
                     ));
                     metadata_locker_updater => rule!(require(
-                        admin_key.resource_address()
+                        admin_key
                     ));
                 },
                 init {
@@ -99,7 +93,21 @@ mod generic_marketplace {
             .with_address(marketplace_address_reservation)
             .globalize();
 
-            (component_address, admin_key.into())
+            component_address
+        }
+
+        pub fn retrieve_internal_market_key(&mut self, proof: Proof) -> Bucket {
+            proof.check(self.marketplace_admin);
+
+            let key = self.marketplace_listing_key_vault.take_all();
+            key
+        }
+
+        pub fn withdraw_fees(&mut self, resource_address: ResourceAddress, proof: Proof) -> Bucket {
+            proof.check(self.marketplace_admin);
+            let mut vault = self.fee_vaults.get_mut(&resource_address).unwrap();
+            let fee = vault.take_all();
+            fee
         }
 
         pub fn purchase_royal_listing(
@@ -369,6 +377,114 @@ mod generic_marketplace {
             all_nfts
         }
 
+        pub fn multi_listing_honour_purchase(
+            &mut self,
+            orders: Vec<(Global<AnyComponent>, NonFungibleGlobalId, Decimal)>,
+            mut full_payment: FungibleBucket,
+        ) -> Vec<Bucket> {
+            // Group orders by trader account address
+            let mut grouped_orders: HashMap<
+                Global<AnyComponent>,
+                Vec<(NonFungibleGlobalId, Decimal)>,
+            > = HashMap::new();
+
+            for (address, nfgid, payment) in orders {
+                grouped_orders
+                    .entry(address)
+                    .or_insert_with(Vec::new)
+                    .push((nfgid, payment));
+            }
+
+            let mut all_nfts: Vec<Bucket> = Vec::new();
+
+            let nflid = NonFungibleLocalId::integer(1u64.into());
+            let proof_creation: Proof = self
+                .marketplace_listing_key_vault
+                .as_non_fungible()
+                .create_proof_of_non_fungibles(&indexset![nflid])
+                .into();
+
+            // Process each group of orders
+            for (address, order_group) in grouped_orders {
+                // Create proof for the entire group
+
+                if order_group.len() == 1 {
+                    // Single purchase case
+                    let (nfgid, payment_amount) = order_group.into_iter().next().unwrap();
+                    let payment = full_payment.take(payment_amount);
+                    // let mut result = address.call_raw::<(Vec<Bucket>, Vec<Bucket>)>(
+                    //     "purchase_listing",
+                    //     scrypto_args!(nfgid, payment, proof_creation.clone()),
+                    // );
+
+                    let mut result = address.call_raw::<(Vec<Bucket>, Vec<Bucket>)>(
+                        "multi_purchase_honour_listing",
+                        scrypto_args!([nfgid], payment, proof_creation.clone()),
+                    );
+
+                    // Handle fee
+                    let fee_returned = result.1.pop().unwrap();
+                    let fee_resource = fee_returned.resource_address();
+
+                    // Store fee in vault
+                    let fee_vault_exists = self.fee_vaults.get(&fee_resource).is_some();
+
+                    if fee_vault_exists {
+                        self.fee_vaults
+                            .get_mut(&fee_resource)
+                            .unwrap()
+                            .put(fee_returned);
+                    } else {
+                        let fee_vault = Vault::with_bucket(fee_returned);
+                        self.fee_vaults.insert(fee_resource, fee_vault);
+                    }
+
+                    // Collect NFTs
+                    all_nfts.extend(result.0);
+                } else {
+                    // Multi purchase case
+                    let nfgids: Vec<NonFungibleGlobalId> =
+                        order_group.iter().map(|(nfgid, _)| nfgid.clone()).collect();
+
+                    // Combine all payments into one bucket
+                    let total_payment: Decimal = order_group
+                        .into_iter()
+                        .map(|(_, payment)| payment)
+                        .reduce(|acc, payment| acc + payment)
+                        .unwrap();
+
+                    let combined_payment = full_payment.take(total_payment);
+
+                    let mut result = address.call_raw::<(Vec<Bucket>, Vec<Bucket>)>(
+                        "multi_purchase_honour_listing",
+                        scrypto_args!(nfgids, combined_payment, proof_creation.clone()),
+                    );
+
+                    // Handle fee
+                    let fee_returned = result.1.pop().unwrap();
+                    let fee_resource = fee_returned.resource_address();
+
+                    // Store fee in vault
+                    let fee_vault_exists = self.fee_vaults.get(&fee_resource).is_some();
+
+                    if fee_vault_exists {
+                        self.fee_vaults
+                            .get_mut(&fee_resource)
+                            .unwrap()
+                            .put(fee_returned);
+                    } else {
+                        let fee_vault = Vault::with_bucket(fee_returned);
+                        self.fee_vaults.insert(fee_resource, fee_vault);
+                    }
+
+                    // Collect NFTs
+                    all_nfts.extend(result.0);
+                }
+            }
+            all_nfts.push(full_payment.into());
+            all_nfts
+        }
+
         pub fn purchase_listing(
             &mut self,
             nfgid: NonFungibleGlobalId,
@@ -407,44 +523,6 @@ mod generic_marketplace {
             fee_and_nft.0
         }
 
-        pub fn purchase_preview_mint_v2(
-            &mut self,
-            payment: Bucket,
-            amount: u64,
-            fee: Bucket,
-            account: Option<Global<Account>>,
-            preview_mint_address: Global<AnyComponent>,
-        ) -> (Bucket, Vec<NonFungibleBucket>, Option<Bucket>) {
-            let fee_expected = payment.amount() * self.mint_fee;
-
-            assert!(fee.amount() >= fee_expected);
-
-            let fee_resource = fee.resource_address();
-            let fee_vault_exists = self.fee_vaults.get(&fee_resource).is_some();
-
-            if fee_vault_exists {
-                self.fee_vaults.get_mut(&fee_resource).unwrap().put(fee);
-            } else {
-                let fee_vault = Vault::with_bucket(fee);
-                self.fee_vaults.insert(fee_resource, fee_vault);
-            }
-
-            let nflid = NonFungibleLocalId::integer(1u64.into());
-            let proof_creation: Proof = self
-                .marketplace_listing_key_vault
-                .as_non_fungible()
-                .create_proof_of_non_fungibles(&indexset![nflid])
-                .into();
-
-            let receipt_and_change: (Bucket, Vec<NonFungibleBucket>, Option<Bucket>) =
-                preview_mint_address.call_raw::<(Bucket, Vec<NonFungibleBucket>, Option<Bucket>)>(
-                    "mint_preview_nft",
-                    scrypto_args!(payment, amount, account, proof_creation),
-                );
-
-            receipt_and_change
-        }
-
         pub fn get_marketplace_key_address(&self) -> ResourceAddress {
             self.marketplace_listing_key_vault.resource_address()
         }
@@ -453,13 +531,23 @@ mod generic_marketplace {
             &mut self,
             mut total_payment: Bucket, // User's total payment for minting and marketplace fees
             cost_per_item_from_minter: Decimal, // The price of one NFT item as set by the minter component
-            quantity_to_mint: u64,    // Number of NFTs the user wants to mint
+            quantity_to_mint: u64,              // Number of NFTs the user wants to mint
             user_account_recipient: Option<Global<Account>>, // Account to receive NFTs and transient token
-            preview_mint_address: Global<AnyComponent>, // The minter component
-        ) -> (Bucket, Vec<NonFungibleBucket>, Option<Bucket>) { // Returns: (total_change_to_user, nfts_minted, optional_transient_token)
-            assert!(self.mint_fee >= Decimal::ZERO, "[purchase_preview_mint] Marketplace mint_fee rate must be non-negative.");
-            assert!(cost_per_item_from_minter >= Decimal::ZERO, "[purchase_preview_mint] cost_per_item_from_minter must be non-negative.");
-            assert!(quantity_to_mint > 0, "[purchase_preview_mint] quantity_to_mint must be greater than zero.");
+            preview_mint_address: Global<AnyComponent>,      // The minter component
+        ) -> (Bucket, Vec<NonFungibleBucket>, Option<Bucket>) {
+            // Returns: (total_change_to_user, nfts_minted, optional_transient_token)
+            assert!(
+                self.mint_fee >= Decimal::ZERO,
+                "[purchase_preview_mint] Marketplace mint_fee rate must be non-negative."
+            );
+            assert!(
+                cost_per_item_from_minter >= Decimal::ZERO,
+                "[purchase_preview_mint] cost_per_item_from_minter must be non-negative."
+            );
+            assert!(
+                quantity_to_mint > 0,
+                "[purchase_preview_mint] quantity_to_mint must be greater than zero."
+            );
 
             // 1. Calculate the total cost due to the minter for the requested quantity.
             // This is the amount the minter component expects to receive for the items.
@@ -475,7 +563,8 @@ mod generic_marketplace {
             // Round the marketplace fee to a takeable Decimal value (e.g., 18 decimal places).
             // RoundingMode::ToNearestMidpointAwayFromZero is a common financial rounding method.
             let marketplace_fee_to_take_decimal = marketplace_fee_on_minter_payment_decimal
-                .checked_round(18, RoundingMode::ToNearestMidpointAwayFromZero).unwrap();
+                .checked_round(18, RoundingMode::ToNearestMidpointAwayFromZero)
+                .unwrap();
 
             // 3. Calculate the total amount required by the protocol (minter + marketplace).
             let total_required_by_protocol_decimal = payment_due_to_minter_decimal
@@ -486,7 +575,8 @@ mod generic_marketplace {
             assert!(
                 total_payment.amount() >= total_required_by_protocol_decimal,
                 "[purchase_preview_mint] Insufficient total payment. Required: {}, Provided: {}",
-                total_required_by_protocol_decimal, total_payment.amount()
+                total_required_by_protocol_decimal,
+                total_payment.amount()
             );
 
             // 5. Take the payment intended for the minter from the total_payment.
@@ -496,10 +586,10 @@ mod generic_marketplace {
                 payment_due_to_minter_decimal,
                 WithdrawStrategy::Rounded(RoundingMode::ToZero),
             );
-            
+
             // Sanity check: ensure we actually took what was expected for the minter.
             // This is crucial for the minter to receive the correct amount.
-            assert_eq!(payment_for_minter_bucket.amount(), payment_due_to_minter_decimal, 
+            assert_eq!(payment_for_minter_bucket.amount(), payment_due_to_minter_decimal,
                        "[purchase_preview_mint] Mismatch in amount taken for minter. Expected {}, Got {}. This could indicate an issue with total_payment or take_advanced behavior.", 
                        payment_due_to_minter_decimal, payment_for_minter_bucket.amount());
 
@@ -525,8 +615,6 @@ mod generic_marketplace {
                     self.fee_vaults.insert(fee_resource, new_fee_vault);
                 }
             }
-            
-           
 
             // 8. Create the marketplace permission proof (e.g., using a marketplace-specific key).
             let nflid = NonFungibleLocalId::integer(1u64.into()); // Example ID for marketplace key
@@ -541,20 +629,25 @@ mod generic_marketplace {
             // The minter returns: (change_from_minter, Vec<NonFungibleBucket_nfts>, Option<Bucket_transient_token>)
             let (mut change_from_minter_bucket, minted_nfts_vec, transient_token_opt_bucket) =
                 preview_mint_address.call_raw::<(Bucket, Vec<NonFungibleBucket>, Option<Bucket>)>(
-                    "mint_preview_nft", 
-                    scrypto_args!(payment_for_minter_bucket, quantity_to_mint, user_account_recipient, marketplace_permission_proof),
+                    "mint_preview_nft",
+                    scrypto_args!(
+                        payment_for_minter_bucket,
+                        quantity_to_mint,
+                        user_account_recipient,
+                        marketplace_permission_proof
+                    ),
                 );
 
-                change_from_minter_bucket.put(total_payment);
+            change_from_minter_bucket.put(total_payment);
 
             // If user_change_from_marketplace_bucket was zero, then change_from_minter_bucket (whether zero or not) is the correct total change.
 
             // Return the combined change, the minted NFTs, and the optional transient token.
-            (change_from_minter_bucket, minted_nfts_vec, transient_token_opt_bucket)
+            (
+                change_from_minter_bucket,
+                minted_nfts_vec,
+                transient_token_opt_bucket,
+            )
         }
-
-
-
     }
-
 }

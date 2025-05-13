@@ -1,6 +1,5 @@
 use scrypto::prelude::*;
 
-
 use crate::minter::royal_nft::*;
 
 #[derive(ScryptoSbor, ScryptoEvent)]
@@ -9,21 +8,21 @@ pub struct FreshMint {
     pub resource_address: ResourceAddress,
 }
 
-
 #[blueprint]
 #[events(FreshMint)]
 mod mint_factory {
     use crate::minter::{MintingConfig, NFTMetadata, RoyaltyConfigInput};
 
-
     struct MintFactory {
         dapp_deff: ComponentAddress,
+        admin: ResourceAddress,
     }
 
     impl MintFactory {
-        pub fn start_mint_factory(dapp_definition: ComponentAddress) -> (Global<MintFactory>, Bucket) {
-
-
+        pub fn start_mint_factory(
+            dapp_definition: ComponentAddress,
+            admin: ResourceAddress,
+        ) -> (Global<MintFactory>, Bucket) {
             let (address_reservation, _component_address) =
                 Runtime::allocate_component_address(MintFactory::blueprint_id());
 
@@ -48,10 +47,10 @@ mod mint_factory {
 
             let admin_rule = rule!(require(mint_factory_admin.resource_address()));
 
-(
+            (
             Self {
-               dapp_deff: dapp_definition
-               
+               dapp_deff: dapp_definition,
+               admin
             }
             .instantiate()
             .prepare_to_globalize(OwnerRole::None)
@@ -71,25 +70,46 @@ mod mint_factory {
             ))
             .with_address(address_reservation)
             .globalize(), mint_factory_admin)
-
-
-
         }
 
-        pub fn create_royal_nft(&mut self,
+        pub fn create_royal_nft(
+            &mut self,
             setup_metadata: NFTMetadata,
             minting_config: MintingConfig,
-            royalty_config_input: RoyaltyConfigInput,       
+            royalty_config_input: RoyaltyConfigInput,
         ) -> (Global<RoyalNFTs>, NonFungibleBucket, ResourceAddress) {
+            let name_string = format!("OP Mint {}", setup_metadata.name);
 
-
-            let fresh_mint: (Global<RoyalNFTs>, NonFungibleBucket, ResourceAddress) = RoyalNFTs::start_minting_nft(
-                setup_metadata,
-                minting_config,
-                royalty_config_input,
-                self.dapp_deff
-               
+            let dapp_def_account =
+                Blueprint::<Account>::create_advanced(OwnerRole::Updatable(rule!(allow_all)), None); // will reset owner role after dapp def metadata has been set
+            dapp_def_account.set_metadata("account_type", String::from("dapp definition"));
+            dapp_def_account.set_metadata("name", name_string);
+            dapp_def_account.set_metadata(
+                "description",
+                "A minting and royalty logic component".to_string(),
             );
+            dapp_def_account.set_metadata("collection", setup_metadata.name.clone());
+            dapp_def_account.set_metadata("info_url", Url::of("https://www.outpost.trade/"));
+            dapp_def_account.set_metadata(
+                "icon_url",
+                Url::of("https://www.outpost.trade/img/outpost_symbol.png"),
+            );
+
+            let dapp_def_address = GlobalAddress::from(dapp_def_account.address());
+
+            let fresh_mint: (Global<RoyalNFTs>, NonFungibleBucket, ResourceAddress) =
+                RoyalNFTs::start_minting_nft(
+                    setup_metadata,
+                    minting_config,
+                    royalty_config_input,
+                    dapp_def_address,
+                );
+
+            dapp_def_account.set_metadata(
+                "claimed_entities",
+                vec![GlobalAddress::from(fresh_mint.0.address())],
+            );
+            dapp_def_account.set_owner_role(rule!(require(self.admin)));
 
             Runtime::emit_event(FreshMint {
                 mint_component: fresh_mint.0.address(),
@@ -98,7 +118,5 @@ mod mint_factory {
 
             fresh_mint
         }
-    
     }
-
 }

@@ -111,8 +111,6 @@ fn list_and_purchase_bulk_royalty_nft() {
         vec![marketplace_key.clone()],
     );
 
-   
-
     println!("list royalty passed");
 
     let transient_token_address =
@@ -133,8 +131,6 @@ fn list_and_purchase_bulk_royalty_nft() {
             dec!(10),
         ));
     }
-
-  
 
     purchase_multi_royalty_nft(
         &mut test_runner,

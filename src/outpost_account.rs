@@ -51,6 +51,7 @@ mod opentrader {
         royal_multi_list => Xrd(dec!(0.000000000000000001).into());
         fetch_auth_key => Free;
         cleared => Free;
+        multi_purchase_honour_listing => Free;
         multi_cleared => Free;
         transient_token_address => Free;
     }
@@ -78,6 +79,7 @@ mod opentrader {
         cleared => PUBLIC;
         multi_cleared => PUBLIC;
         transient_token_address => PUBLIC;
+        multi_purchase_honour_listing => PUBLIC;
         purchase_multi_royal_listings => PUBLIC;
     }
     }
@@ -1248,6 +1250,137 @@ mod opentrader {
             emitter_proof.authorize(|| {
                 self.account_locker
                     .store(self.my_account, payment.into(), true);
+            });
+
+            (nft_buckets, fee_buckets)
+        }
+
+        pub fn multi_purchase_honour_listing(
+            &mut self,
+            nfgids: Vec<NonFungibleGlobalId>,
+            mut payment: FungibleBucket,
+            permission: Proof,
+        ) -> (Vec<Bucket>, Vec<Bucket>) {
+            // Validate all listings exist and marketplace has permission
+            let marketplace = permission.resource_address();
+            let listings: Vec<Listing> = nfgids
+                .iter()
+                .map(|nfgid| {
+                    let listing = self
+                        .listings
+                        .get(nfgid)
+                        .expect("[purchase] Listing not found");
+
+                    assert!(
+                        listing.secondary_seller_permissions.contains(&marketplace),
+                        "[purchase] Marketplace does not have permission to purchase this listing"
+                    );
+
+                    listing.clone()
+                })
+                .collect();
+
+            // not checking all the same, no necessary as process is honoured.
+            let nft_address = nfgids[0].resource_address();
+
+            // Calculate total price and verify all currencies match
+            let first_currency = listings[0].currency;
+            let total_price: Decimal = listings.iter().fold(dec!(0), |acc, listing| {
+                assert!(
+                    listing.currency == first_currency,
+                    "[purchase] All listings must use the same currency"
+                );
+                acc.checked_add(listing.price).unwrap()
+            });
+
+            // Verify payment amount and currency
+            assert!(
+                payment.resource_address() == first_currency,
+                "[purchase] Payment currency does not match listing currency"
+            );
+            assert!(
+                payment.amount() == total_price,
+                "[purchase] Payment amount does not match total listing price"
+            );
+
+            let nft_manager = ResourceManager::from_address(nft_address);
+
+            let royalty_component_global_address: GlobalAddress = nft_manager
+                .get_metadata("royalty_component")
+                .unwrap()
+                .unwrap();
+
+            let royalty_component =
+                ComponentAddress::new_or_panic(royalty_component_global_address.into());
+
+            let call_address: Global<AnyComponent> = Global(ObjectStub::new(
+                ObjectStubHandle::Global(GlobalAddress::from(royalty_component)),
+            ));
+
+            let payment_cache = payment.amount().clone();
+
+            // We send the full payment to the royalty component so that it can take its %fee.
+            // We also provide the trading permission to check against any other permissions the creator has set.
+            let mut remainder_after_royalty: Bucket = Global::<AnyComponent>::from(call_address)
+                .call_raw(
+                    "pay_royalty_basic",
+                    scrypto_args!(nft_address, payment, marketplace),
+                );
+
+            // Calculate marketplace fee
+            let marketplace_fee_option: Option<Decimal> = permission
+                .skip_checking()
+                .resource_manager()
+                .get_metadata("marketplace_fee")
+                .unwrap();
+
+            let marketplace_fee = if let Some(marketplace_fee_rate) = marketplace_fee_option {
+                payment_cache.checked_mul(marketplace_fee_rate).unwrap()
+            } else {
+                dec!(0)
+            };
+
+            // Prepare return buckets
+            let mut nft_buckets: Vec<Bucket> = Vec::with_capacity(nfgids.len());
+            let mut fee_buckets: Vec<Bucket> = Vec::new();
+
+            // Take marketplace fee if applicable
+            if marketplace_fee > dec!(0) {
+                let marketplace_payment = remainder_after_royalty.take_advanced(
+                    marketplace_fee,
+                    WithdrawStrategy::Rounded(RoundingMode::ToZero),
+                );
+                fee_buckets.push(marketplace_payment.into());
+            }
+
+            // Process all NFTs
+
+            for nfgid in nfgids.iter() {
+                let (nft_resource, nft_local) = nfgid.clone().into_parts();
+
+                // Take NFT from vault
+                let nft = self
+                    .nft_vaults
+                    .get_mut(&nft_resource)
+                    .expect("[purchase] NFT not found");
+                nft_buckets.push(nft.as_non_fungible().take_non_fungible(&nft_local).into());
+
+                // Remove listing
+                self.listings.remove(nfgid);
+            }
+
+            // Create emitter proof and emit bulk event
+            let emitter_proof = self
+                .emitter_badge
+                .as_non_fungible()
+                .create_proof_of_non_fungibles(&indexset![self.emitter_badge_local.clone()]);
+
+            self.multi_purchase_event(listings);
+
+            // Store the remaining payment
+            emitter_proof.authorize(|| {
+                self.account_locker
+                    .store(self.my_account, remainder_after_royalty.into(), true);
             });
 
             (nft_buckets, fee_buckets)
